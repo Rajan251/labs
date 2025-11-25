@@ -1,0 +1,130 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Docker configuration
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_IMAGE = 'username/myapp'
+        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
+        
+        // Kubernetes configuration
+        KUBECONFIG_CREDENTIALS_ID = 'kubeconfig'
+        APP_NAME = 'myapp'
+        NAMESPACE = 'production'
+        
+        // Git commit hash
+        GIT_COMMIT_SHORT = sh(
+            script: "git rev-parse --short HEAD",
+            returnStdout: true
+        ).trim()
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '📥 Checking out code...'
+                checkout scm
+            }
+        }
+        
+        stage('Build Application') {
+            steps {
+                echo '🔨 Building application...'
+                sh '''
+                    echo "Installing dependencies..."
+                    npm install
+                    
+                    echo "Building application..."
+                    npm run build
+                '''
+            }
+        }
+        
+        stage('Run Tests') {
+            steps {
+                echo '🧪 Running tests...'
+                sh '''
+                    npm run test
+                '''
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo '🐳 Building Docker image...'
+                script {
+                    dockerImage = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+                    docker.build("${DOCKER_IMAGE}:latest")
+                }
+            }
+        }
+        
+        stage('Push Docker Image') {
+            steps {
+                echo '📤 Pushing Docker image to registry...'
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", DOCKER_CREDENTIALS_ID) {
+                        dockerImage.push("${BUILD_NUMBER}")
+                        dockerImage.push("${GIT_COMMIT_SHORT}")
+                        dockerImage.push("latest")
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Kubernetes') {
+            steps {
+                echo '🚀 Deploying to Kubernetes...'
+                script {
+                    withCredentials([file(credentialsId: KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                        sh """
+                            echo "Updating deployment with new image..."
+                            kubectl set image deployment/${APP_NAME} \
+                                ${APP_NAME}=${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                                -n ${NAMESPACE}
+                            
+                            echo "Waiting for rollout to complete..."
+                            kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE} --timeout=5m
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                echo '✅ Verifying deployment...'
+                script {
+                    withCredentials([file(credentialsId: KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                        sh """
+                            echo "Checking pod status..."
+                            kubectl get pods -n ${NAMESPACE} -l app=${APP_NAME}
+                            
+                            echo "Checking service..."
+                            kubectl get svc -n ${NAMESPACE} -l app=${APP_NAME}
+                            
+                            echo "Deployment successful!"
+                        """
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ Pipeline succeeded!'
+            // Uncomment to enable Slack notification
+            // slackSend color: 'good', message: "Build ${BUILD_NUMBER} succeeded for ${APP_NAME}"
+        }
+        failure {
+            echo '❌ Pipeline failed!'
+            // Uncomment to enable Slack notification
+            // slackSend color: 'danger', message: "Build ${BUILD_NUMBER} failed for ${APP_NAME}"
+        }
+        always {
+            echo '🧹 Cleaning workspace...'
+            cleanWs()
+        }
+    }
+}

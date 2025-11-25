@@ -1,0 +1,141 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Docker configuration
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_IMAGE = 'username/myapp'
+        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
+        
+        // Kubernetes configuration
+        KUBECONFIG_CREDENTIALS_ID = 'kubeconfig'
+        HELM_CHART = './helm/myapp'
+        APP_NAME = 'myapp'
+        NAMESPACE = 'production'
+        
+        // Git commit hash
+        GIT_COMMIT_SHORT = sh(
+            script: "git rev-parse --short HEAD",
+            returnStdout: true
+        ).trim()
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '📥 Checking out code...'
+                checkout scm
+            }
+        }
+        
+        stage('Build & Test') {
+            parallel {
+                stage('Build Application') {
+                    steps {
+                        echo '🔨 Building application...'
+                        sh '''
+                            npm install
+                            npm run build
+                        '''
+                    }
+                }
+                
+                stage('Run Unit Tests') {
+                    steps {
+                        echo '🧪 Running unit tests...'
+                        sh 'npm run test:unit'
+                    }
+                }
+                
+                stage('Run Integration Tests') {
+                    steps {
+                        echo '🔗 Running integration tests...'
+                        sh 'npm run test:integration'
+                    }
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo '🐳 Building Docker image...'
+                script {
+                    dockerImage = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+                }
+            }
+        }
+        
+        stage('Push Docker Image') {
+            steps {
+                echo '📤 Pushing Docker image...'
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", DOCKER_CREDENTIALS_ID) {
+                        dockerImage.push("${BUILD_NUMBER}")
+                        dockerImage.push("${GIT_COMMIT_SHORT}")
+                        dockerImage.push("latest")
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy with Helm') {
+            steps {
+                echo '⎈ Deploying with Helm...'
+                script {
+                    withCredentials([file(credentialsId: KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                        sh """
+                            helm upgrade --install ${APP_NAME} ${HELM_CHART} \
+                                --namespace ${NAMESPACE} \
+                                --create-namespace \
+                                --set image.repository=${DOCKER_IMAGE} \
+                                --set image.tag=${BUILD_NUMBER} \
+                                --set image.pullPolicy=Always \
+                                --wait \
+                                --timeout 5m
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                echo '✅ Verifying Helm deployment...'
+                script {
+                    withCredentials([file(credentialsId: KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                        sh """
+                            echo "Helm release status:"
+                            helm status ${APP_NAME} -n ${NAMESPACE}
+                            
+                            echo "\\nPods:"
+                            kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=${APP_NAME}
+                            
+                            echo "\\nServices:"
+                            kubectl get svc -n ${NAMESPACE} -l app.kubernetes.io/name=${APP_NAME}
+                        """
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ Helm deployment succeeded!'
+        }
+        failure {
+            echo '❌ Helm deployment failed!'
+            script {
+                withCredentials([file(credentialsId: KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                    sh """
+                        echo "Rolling back to previous release..."
+                        helm rollback ${APP_NAME} -n ${NAMESPACE}
+                    """
+                }
+            }
+        }
+        always {
+            cleanWs()
+        }
+    }
+}

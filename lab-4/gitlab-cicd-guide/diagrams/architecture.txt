@@ -1,0 +1,423 @@
+# GitLab CI/CD Architecture Diagrams
+
+## Complete CI/CD Pipeline Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            DEVELOPER WORKFLOW                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      │ git push
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            GITLAB INSTANCE                                   │
+│  ┌────────────────┐  ┌──────────────────┐  ┌─────────────────────────────┐ │
+│  │  Git Repository│  │  CI/CD Pipeline  │  │  Container Registry         │ │
+│  │  - Source Code │──│  - .gitlab-ci.yml│──│  - Docker Images            │ │
+│  │  - Branches    │  │  - Jobs/Stages   │  │  - Tag Management           │ │
+│  │  - Tags        │  │  - Variables     │  │  - Vulnerability Reports    │ │
+│  └────────────────┘  └────────┬─────────┘  └─────────────────────────────┘ │
+└───────────────────────────────┼──────────────────────────────────────────────┘
+                                │
+                                │ Trigger Jobs
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          GITLAB RUNNER(S)                                    │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  PREPARE STAGE                                                        │  │
+│  │  ├─ Cache Dependencies (npm ci, pip install)                         │  │
+│  │  └─ Setup Environment                                                │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                ↓                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  BUILD STAGE                                                          │  │
+│  │  ├─ Compile Code (npm run build, mvn package)                        │  │
+│  │  ├─ Generate Artifacts                                               │  │
+│  │  └─ Store Build Outputs                                              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                ↓                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  TEST STAGE (Parallel)                                                │  │
+│  │  ├─ Unit Tests                                                        │  │
+│  │  ├─ Integration Tests                                                 │  │
+│  │  ├─ Linting                                                           │  │
+│  │  └─ Code Coverage                                                     │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                ↓                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  SECURITY STAGE (Parallel)                                            │  │
+│  │  ├─ SAST (Static Application Security Testing)                       │  │
+│  │  ├─ Dependency Scanning                                              │  │
+│  │  ├─ Secret Detection                                                 │  │
+│  │  └─ License Compliance                                               │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                ↓                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  IMAGE BUILD STAGE                                                    │  │
+│  │  ├─ Docker Build (multi-stage)                                       │  │
+│  │  ├─ Tag Image (commit SHA, branch, semver)                           │  │
+│  │  └─ Push to GitLab Container Registry                                │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                ↓                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  CONTAINER SCANNING                                                   │  │
+│  │  ├─ Scan Image for Vulnerabilities (Trivy)                           │  │
+│  │  ├─ Check OS Packages                                                │  │
+│  │  └─ Generate Security Report                                         │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                │
+                                │ Deploy
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          DEPLOYMENT TARGETS                                  │
+│                                                                              │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐ │
+│  │  REVIEW APPS     │  │  STAGING         │  │  PRODUCTION              │ │
+│  │  (MR-based)      │  │  (main branch)   │  │  (tags only)             │ │
+│  │                  │  │                  │  │                          │ │
+│  │  Kubernetes:     │  │  Kubernetes:     │  │  Kubernetes:             │ │
+│  │  - Namespace:    │  │  - Namespace:    │  │  - Namespace:            │ │
+│  │    review-*      │  │    staging       │  │    production            │ │
+│  │  - Auto-cleanup  │  │  - Persistent    │  │  - HA (3+ replicas)      │ │
+│  │  - 1 replica     │  │  - 2 replicas    │  │  - Auto-scaling          │ │
+│  │                  │  │                  │  │  - Manual approval       │ │
+│  │  URL:            │  │  URL:            │  │  URL:                    │ │
+│  │  branch.review   │  │  staging.com     │  │  example.com             │ │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                │
+                                │ Metrics & Logs
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          OBSERVABILITY                                       │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐ │
+│  │  Prometheus      │  │  Grafana         │  │  GitLab Metrics          │ │
+│  │  - Metrics       │  │  - Dashboards    │  │  - Pipeline Duration     │ │
+│  │  - Alerts        │  │  - Visualization │  │  - Success Rate          │ │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Security Scanning Integration
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     SECURITY SCANNING WORKFLOW                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+                              Source Code
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼              ▼
+            ┌──────────────┐ ┌──────────┐ ┌─────────────┐
+            │     SAST     │ │ Secret   │ │ Dependency  │
+            │   Scanner    │ │ Detection│ │  Scanning   │
+            │              │ │          │ │             │
+            │ - Semgrep    │ │ - Regex  │ │ - Gemnasium │
+            │ - Bandit     │ │ - Rules  │ │ - Retire.js │
+            │ - Gosec      │ │          │ │             │
+            └──────┬───────┘ └────┬─────┘ └──────┬──────┘
+                   │              │               │
+                   └──────────────┼───────────────┘
+                                  │
+                                  ▼
+                        ┌──────────────────┐
+                        │  Security Report │
+                        │   (JSON/SARIF)   │
+                        └─────────┬────────┘
+                                  │
+                    ┌─────────────┼─────────────┐
+                    ▼             ▼             ▼
+            ┌──────────────┐ ┌─────────┐ ┌──────────────┐
+            │ Merge Request│ │ Security│ │ Vulnerability│
+            │   Widget     │ │Dashboard│ │  Management  │
+            │              │ │   (EE)  │ │     (EE)     │
+            └──────────────┘ └─────────┘ └──────────────┘
+
+                              Container Image
+                                   │
+                                   ▼
+                        ┌──────────────────┐
+                        │    Container     │
+                        │    Scanning      │
+                        │    (Trivy)       │
+                        │                  │
+                        │ - OS Packages    │
+                        │ - App Dependencies│
+                        └─────────┬────────┘
+                                  │
+                                  ▼
+                        ┌──────────────────┐
+                        │  Vulnerability   │
+                        │     Report       │
+                        └──────────────────┘
+
+                         Running Application
+                                   │
+                                   ▼
+                        ┌──────────────────┐
+                        │      DAST        │
+                        │    Scanner       │
+                        │                  │
+                        │ - OWASP ZAP      │
+                        │ - API Fuzzing    │
+                        └─────────┬────────┘
+                                  │
+                                  ▼
+                        ┌──────────────────┐
+                        │  Security Report │
+                        └──────────────────┘
+```
+
+---
+
+## Branching & Deployment Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      GIT BRANCHING MODEL                             │
+└─────────────────────────────────────────────────────────────────────┘
+
+feature/user-auth ─┐
+                   │
+feature/api-v2 ────┤
+                   ├──▶ Merge Request ──▶ Code Review ──▶ Merge
+feature/dashboard ─┘                          │
+                                              │
+                                              ▼
+main ─────────────────────────────────────────●─────────────────▶
+                                              │
+                                              │ Auto-deploy
+                                              ▼
+                                        ┌──────────┐
+                                        │ STAGING  │
+                                        └──────────┘
+                                              │
+                                              │ Create tag
+                                              ▼
+v1.0.0 (tag) ─────────────────────────────────●
+                                              │
+                                              │ Manual deploy
+                                              ▼
+                                        ┌──────────┐
+                                        │PRODUCTION│
+                                        └──────────┘
+
+Pipeline Execution by Event:
+┌──────────────────┬─────────────────────────────────────────────────┐
+│ Event            │ Pipeline Actions                                 │
+├──────────────────┼─────────────────────────────────────────────────┤
+│ Push to feature  │ Build → Test → Security Scan                    │
+│ Merge Request    │ Build → Test → Security → Image → Review App    │
+│ Push to main     │ Build → Test → Security → Image → Deploy Staging│
+│ Create tag v*    │ Full Pipeline → Deploy Production (manual)      │
+└──────────────────┴─────────────────────────────────────────────────┘
+```
+
+---
+
+## Kubernetes Deployment Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    KUBERNETES CLUSTER                                │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │  NAMESPACE: production                                          │ │
+│  │                                                                 │ │
+│  │  ┌──────────────────────────────────────────────────────────┐  │ │
+│  │  │  Ingress Controller (nginx)                              │  │ │
+│  │  │  - TLS Termination                                       │  │ │
+│  │  │  - Rate Limiting                                         │  │ │
+│  │  │  - Load Balancing                                        │  │ │
+│  │  └────────────────────┬─────────────────────────────────────┘  │ │
+│  │                       │                                         │ │
+│  │                       ▼                                         │ │
+│  │  ┌──────────────────────────────────────────────────────────┐  │ │
+│  │  │  Service (ClusterIP)                                     │  │ │
+│  │  │  - Port: 80 → 3000                                       │  │ │
+│  │  └────────────────────┬─────────────────────────────────────┘  │ │
+│  │                       │                                         │ │
+│  │                       ▼                                         │ │
+│  │  ┌──────────────────────────────────────────────────────────┐  │ │
+│  │  │  Deployment (gitlab-cicd-app)                            │  │ │
+│  │  │  - Replicas: 3                                           │  │ │
+│  │  │  - Strategy: RollingUpdate                               │  │ │
+│  │  │  - MaxSurge: 1, MaxUnavailable: 0                        │  │ │
+│  │  │                                                           │  │ │
+│  │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐         │  │ │
+│  │  │  │   Pod 1    │  │   Pod 2    │  │   Pod 3    │         │  │ │
+│  │  │  │            │  │            │  │            │         │  │ │
+│  │  │  │ Container: │  │ Container: │  │ Container: │         │  │ │
+│  │  │  │  app:v1.0  │  │  app:v1.0  │  │  app:v1.0  │         │  │ │
+│  │  │  │            │  │            │  │            │         │  │ │
+│  │  │  │ Resources: │  │ Resources: │  │ Resources: │         │  │ │
+│  │  │  │ CPU: 250m  │  │ CPU: 250m  │  │ CPU: 250m  │         │  │ │
+│  │  │  │ Mem: 256Mi │  │ Mem: 256Mi │  │ Mem: 256Mi │         │  │ │
+│  │  │  │            │  │            │  │            │         │  │ │
+│  │  │  │ Probes:    │  │ Probes:    │  │ Probes:    │         │  │ │
+│  │  │  │ ✓ Liveness │  │ ✓ Liveness │  │ ✓ Liveness │         │  │ │
+│  │  │  │ ✓ Readiness│  │ ✓ Readiness│  │ ✓ Readiness│         │  │ │
+│  │  │  └────────────┘  └────────────┘  └────────────┘         │  │ │
+│  │  └──────────────────────────────────────────────────────────┘  │ │
+│  │                                                                 │ │
+│  │  ┌──────────────────────────────────────────────────────────┐  │ │
+│  │  │  ConfigMap (app-config)                                  │  │ │
+│  │  │  - APP_NAME: gitlab-cicd-app                             │  │ │
+│  │  │  - ENVIRONMENT: production                               │  │ │
+│  │  └──────────────────────────────────────────────────────────┘  │ │
+│  │                                                                 │ │
+│  │  ┌──────────────────────────────────────────────────────────┐  │ │
+│  │  │  Secret (app-secrets)                                    │  │ │
+│  │  │  - DATABASE_PASSWORD: ********                           │  │ │
+│  │  │  - API_KEY: ********                                     │  │ │
+│  │  └──────────────────────────────────────────────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Runner Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      GITLAB RUNNER ARCHITECTURE                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+                            GitLab Instance
+                                   │
+                                   │ API Calls
+                                   ▼
+                    ┌───────────────────────────┐
+                    │   GitLab Runner Manager   │
+                    │   - Polls for jobs        │
+                    │   - Manages executors     │
+                    │   - Handles concurrency   │
+                    └────────────┬──────────────┘
+                                 │
+                 ┌───────────────┼───────────────┐
+                 │               │               │
+                 ▼               ▼               ▼
+        ┌────────────────┐ ┌──────────┐ ┌────────────────┐
+        │ Docker Executor│ │Kubernetes│ │ Shell Executor │
+        │                │ │ Executor │ │                │
+        │ ┌────────────┐ │ │          │ │ ┌────────────┐ │
+        │ │  Job 1     │ │ │ ┌──────┐ │ │ │  Job 3     │ │
+        │ │ Container  │ │ │ │ Pod  │ │ │ │ Direct     │ │
+        │ └────────────┘ │ │ └──────┘ │ │ │ Execution  │ │
+        │ ┌────────────┐ │ │ ┌──────┐ │ │ └────────────┘ │
+        │ │  Job 2     │ │ │ │ Pod  │ │ │                │
+        │ │ Container  │ │ │ └──────┘ │ │                │
+        │ └────────────┘ │ │          │ │                │
+        └────────────────┘ └──────────┘ └────────────────┘
+
+Docker Executor (Detailed):
+┌─────────────────────────────────────────────────────────────┐
+│  Runner Host                                                 │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  Job Container (alpine:latest)                         │ │
+│  │  - Runs job script                                     │ │
+│  │  - Has access to:                                      │ │
+│  │    • /cache (shared volume)                            │ │
+│  │    • /builds (job workspace)                           │ │
+│  │    • Docker socket (if privileged)                     │ │
+│  │                                                         │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │  Service Container (postgres:15)                 │  │ │
+│  │  │  - Linked to job container                       │  │ │
+│  │  │  - Accessible via hostname                       │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
+│  │                                                         │ │
+│  │  ┌──────────────────────────────────────────────────┐  │ │
+│  │  │  Service Container (redis:7)                     │  │ │
+│  │  └──────────────────────────────────────────────────┘  │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Image Promotion Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    IMAGE PROMOTION WORKFLOW                          │
+└─────────────────────────────────────────────────────────────────────┘
+
+Build Stage:
+  Source Code ──▶ Docker Build ──▶ registry.gitlab.com/group/project:abc123
+                                                │
+                                                │ Push
+                                                ▼
+                                   GitLab Container Registry
+                                                │
+                                                │
+                    ┌───────────────────────────┼───────────────────────┐
+                    │                           │                       │
+                    ▼                           ▼                       ▼
+            ┌──────────────┐          ┌──────────────┐        ┌──────────────┐
+            │ Development  │          │   Staging    │        │  Production  │
+            │              │          │              │        │              │
+            │ :abc123      │──promote─│ :staging     │─promote│ :v1.0.0      │
+            │ :main        │          │ :abc123      │        │ :latest      │
+            │              │          │              │        │ :abc123      │
+            └──────────────┘          └──────────────┘        └──────────────┘
+                  │                         │                       │
+                  ▼                         ▼                       ▼
+            Review Apps              Staging Env             Production Env
+            (ephemeral)              (persistent)            (HA, monitored)
+
+Tag Strategy:
+┌─────────────────┬──────────────────────────────────────────────────┐
+│ Tag             │ Purpose                                          │
+├─────────────────┼──────────────────────────────────────────────────┤
+│ :abc123         │ Immutable, traceable (commit SHA)                │
+│ :main           │ Latest on main branch                            │
+│ :staging        │ Currently deployed to staging                    │
+│ :v1.0.0         │ Semantic version (production release)            │
+│ :latest         │ Latest production release                        │
+└─────────────────┴──────────────────────────────────────────────────┘
+```
+
+---
+
+## End-to-End Flow
+
+```
+Developer ──▶ git push ──▶ GitLab ──▶ Trigger Pipeline ──▶ Runner
+                                                              │
+                                                              ▼
+                                                    ┌──────────────────┐
+                                                    │ Prepare & Build  │
+                                                    └────────┬─────────┘
+                                                             │
+                                                             ▼
+                                                    ┌──────────────────┐
+                                                    │  Test & Scan     │
+                                                    └────────┬─────────┘
+                                                             │
+                                                             ▼
+                                                    ┌──────────────────┐
+                                                    │  Build Image     │
+                                                    └────────┬─────────┘
+                                                             │
+                                                             ▼
+                                                    ┌──────────────────┐
+                                                    │ Push to Registry │
+                                                    └────────┬─────────┘
+                                                             │
+                                                             ▼
+                                                    ┌──────────────────┐
+                                                    │  Deploy to K8s   │
+                                                    └────────┬─────────┘
+                                                             │
+                                                             ▼
+                                                    ┌──────────────────┐
+                                                    │  Monitor & Alert │
+                                                    └──────────────────┘
+```

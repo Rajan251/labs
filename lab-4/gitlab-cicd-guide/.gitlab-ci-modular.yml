@@ -1,0 +1,31 @@
+# Modular GitLab CI/CD Pipeline
+# This example demonstrates how to organize CI/CD configuration using includes
+
+# Include modular templates
+include:
+  - local: 'ci-templates/build.yml'
+  - local: 'ci-templates/test.yml'
+  - local: 'ci-templates/security.yml'
+  - local: 'ci-templates/docker.yml'
+  - local: 'ci-templates/deploy-k8s.yml'
+
+# Global variables
+variables:
+  DOCKER_DRIVER: overlay2
+  IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+
+# Define stages
+stages:
+  - build
+  - test
+  - security
+  - image
+  - deploy
+
+# You can still define jobs here that extend or override template jobs
+# Example: Override the build job from build.yml
+# build:
+#   extends: .build-template
+#   script:
+#     - echo "Custom build script"
+#     - npm run build:custom

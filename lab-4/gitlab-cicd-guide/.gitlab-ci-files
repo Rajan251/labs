@@ -1,0 +1,22 @@
+# GitLab CI/CD Files in This Project
+
+## Main Pipeline Files
+- .gitlab-ci.yml              # Full production pipeline
+- .gitlab-ci-modular.yml      # Modular pipeline using includes
+
+## CI Templates (ci-templates/)
+- build.yml                   # Build stage templates
+- test.yml                    # Test stage templates  
+- security.yml                # Security scanning templates
+- docker.yml                  # Docker build templates
+- deploy-k8s.yml              # Kubernetes deployment templates
+- deploy-vm.yml               # VM deployment templates
+
+## To Use in Your Project
+
+1. Copy .gitlab-ci.yml to your project root
+2. Customize variables and stages for your needs
+3. Or use modular approach with includes
+
+## Documentation
+See README.md for complete guide

@@ -1,0 +1,198 @@
+# GitLab Runner Configuration
+# Recommended config.toml for production use
+
+# Global settings
+concurrent = 4  # Number of jobs to run concurrently
+check_interval = 0  # Check for new jobs (0 = default 3s)
+log_level = "info"  # Log level: debug, info, warn, error, fatal, panic
+log_format = "runner"  # Log format: runner, text, json
+
+# Session server for interactive debugging
+[session_server]
+  session_timeout = 1800  # 30 minutes
+
+# ============================================================================
+# DOCKER EXECUTOR RUNNER
+# ============================================================================
+
+[[runners]]
+  name = "docker-runner-production"
+  url = "https://gitlab.com/"
+  token = "YOUR_RUNNER_TOKEN"  # Replace with actual token after registration
+  executor = "docker"
+  
+  # Runner behavior
+  limit = 0  # Maximum number of builds (0 = unlimited)
+  request_concurrency = 1  # Number of concurrent requests to GitLab
+  output_limit = 4096  # Maximum build log size in kilobytes
+  
+  # Tags
+  tag_list = ["docker", "linux", "production"]
+  run_untagged = false  # Only run jobs with matching tags
+  locked = false  # Lock runner to current project
+  
+  # Docker executor configuration
+  [runners.docker]
+    tls_verify = false
+    image = "alpine:latest"  # Default image if not specified in job
+    privileged = true  # Required for Docker-in-Docker
+    disable_entrypoint_overwrite = false
+    oom_kill_disable = false
+    disable_cache = false
+    
+    # Volumes
+    volumes = ["/cache", "/certs/client"]
+    shm_size = 0
+    
+    # Resource limits
+    cpus = "2"  # CPU limit
+    memory = "4g"  # Memory limit
+    memory_swap = "4g"  # Memory + swap limit
+    memory_reservation = "2g"  # Soft memory limit
+    
+    # Network settings
+    network_mode = "bridge"
+    dns = ["8.8.8.8", "8.8.4.4"]
+    
+    # Pull policy
+    pull_policy = ["if-not-present"]  # or "always", "never"
+    
+    # Allowed images (security)
+    allowed_images = ["*"]  # Restrict to specific images in production
+    
+    # Helper image
+    helper_image = "gitlab/gitlab-runner-helper:x86_64-latest"
+  
+  # Cache configuration (S3)
+  [runners.cache]
+    Type = "s3"
+    Shared = true
+    [runners.cache.s3]
+      ServerAddress = "s3.amazonaws.com"
+      AccessKey = "YOUR_ACCESS_KEY"
+      SecretKey = "YOUR_SECRET_KEY"
+      BucketName = "gitlab-runner-cache"
+      BucketLocation = "us-east-1"
+      Insecure = false
+  
+  # Or use local cache
+  # [runners.cache]
+  #   Type = "local"
+  #   [runners.cache.local]
+  #     Path = "/cache"
+
+# ============================================================================
+# KUBERNETES EXECUTOR RUNNER
+# ============================================================================
+
+[[runners]]
+  name = "kubernetes-runner-production"
+  url = "https://gitlab.com/"
+  token = "YOUR_RUNNER_TOKEN"
+  executor = "kubernetes"
+  tag_list = ["kubernetes", "k8s", "production"]
+  
+  [runners.kubernetes]
+    host = ""  # Leave empty to use in-cluster config
+    namespace = "gitlab-runner"
+    privileged = true  # For Docker-in-Docker
+    
+    # Resource limits
+    cpu_limit = "2"
+    memory_limit = "4Gi"
+    service_cpu_limit = "1"
+    service_memory_limit = "2Gi"
+    helper_cpu_limit = "500m"
+    helper_memory_limit = "256Mi"
+    
+    # Resource requests
+    cpu_request = "1"
+    memory_request = "2Gi"
+    service_cpu_request = "500m"
+    service_memory_request = "1Gi"
+    helper_cpu_request = "100m"
+    helper_memory_request = "128Mi"
+    
+    # Node selector
+    [runners.kubernetes.node_selector]
+      "node-role.kubernetes.io/runner" = "true"
+    
+    # Tolerations
+    [[runners.kubernetes.tolerations]]
+      key = "dedicated"
+      operator = "Equal"
+      value = "gitlab-runner"
+      effect = "NoSchedule"
+    
+    # Pod labels
+    [runners.kubernetes.pod_labels]
+      "app" = "gitlab-runner"
+      "environment" = "production"
+    
+    # Pod annotations
+    [runners.kubernetes.pod_annotations]
+      "prometheus.io/scrape" = "true"
+
+# ============================================================================
+# SHELL EXECUTOR RUNNER (Use with caution)
+# ============================================================================
+
+[[runners]]
+  name = "shell-runner-development"
+  url = "https://gitlab.com/"
+  token = "YOUR_RUNNER_TOKEN"
+  executor = "shell"
+  tag_list = ["shell", "linux", "development"]
+  run_untagged = false
+  
+  # Shell executor runs commands directly on the host
+  # Security risk: jobs have access to host system
+  # Use only for trusted projects and development
+
+# ============================================================================
+# DOCKER+MACHINE EXECUTOR (Auto-scaling)
+# ============================================================================
+
+[[runners]]
+  name = "docker-machine-autoscale"
+  url = "https://gitlab.com/"
+  token = "YOUR_RUNNER_TOKEN"
+  executor = "docker+machine"
+  tag_list = ["autoscale", "docker", "cloud"]
+  
+  [runners.machine]
+    IdleCount = 2  # Minimum idle machines
+    IdleTime = 600  # Seconds before idle machine is removed
+    MaxBuilds = 100  # Max builds before machine is removed
+    MachineDriver = "amazonec2"  # or "google", "azure", "digitalocean"
+    MachineName = "gitlab-runner-%s"
+    MachineOptions = [
+      "amazonec2-access-key=YOUR_ACCESS_KEY",
+      "amazonec2-secret-key=YOUR_SECRET_KEY",
+      "amazonec2-region=us-east-1",
+      "amazonec2-instance-type=t3.medium",
+      "amazonec2-vpc-id=vpc-xxxxx",
+      "amazonec2-subnet-id=subnet-xxxxx",
+      "amazonec2-security-group=gitlab-runner",
+      "amazonec2-tags=Name,gitlab-runner,Environment,production"
+    ]
+  
+  [runners.docker]
+    image = "alpine:latest"
+    privileged = true
+    volumes = ["/cache"]
+
+# ============================================================================
+# NOTES
+# ============================================================================
+
+# 1. Replace YOUR_RUNNER_TOKEN with actual tokens after registration
+# 2. Adjust resource limits based on your workload
+# 3. Configure cache (S3 recommended for shared cache)
+# 4. Use separate runners for different environments
+# 5. Enable privileged mode only when necessary (Docker-in-Docker)
+# 6. Set appropriate tags to control job assignment
+# 7. Monitor runner performance and adjust concurrency
+# 8. Regularly update GitLab Runner to latest version
+# 9. Backup this configuration file
+# 10. Use secrets management for sensitive values

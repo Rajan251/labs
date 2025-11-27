@@ -1,0 +1,265 @@
+pipeline {
+    agent any
+    
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'staging', 'production'],
+            description: 'Target deployment environment'
+        )
+        booleanParam(
+            name: 'RUN_SECURITY_SCAN',
+            defaultValue: true,
+            description: 'Run security vulnerability scan'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip test execution (not recommended)'
+        )
+    }
+    
+    environment {
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_IMAGE = 'username/myapp'
+        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
+        KUBECONFIG_CREDENTIALS_ID = 'kubeconfig'
+        APP_NAME = 'myapp'
+        GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+        BUILD_TAG = "${BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '📥 Checking out code from SCM...'
+                checkout scm
+                script {
+                    env.GIT_BRANCH = sh(script: "git rev-parse --abbrev-ref HEAD", returnStdout: true).trim()
+                }
+            }
+        }
+        
+        stage('Environment Info') {
+            steps {
+                echo """
+                🔍 Build Information:
+                - Build Number: ${BUILD_NUMBER}
+                - Git Branch: ${env.GIT_BRANCH}
+                - Git Commit: ${GIT_COMMIT_SHORT}
+                - Target Environment: ${params.ENVIRONMENT}
+                - Build Tag: ${BUILD_TAG}
+                """
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                echo '📦 Installing dependencies...'
+                sh '''
+                    npm ci --prefer-offline --no-audit
+                '''
+            }
+        }
+        
+        stage('Code Quality & Tests') {
+            when {
+                expression { !params.SKIP_TESTS }
+            }
+            parallel {
+                stage('Lint Code') {
+                    steps {
+                        echo '🔍 Running linter...'
+                        sh 'npm run lint'
+                    }
+                }
+                
+                stage('Unit Tests') {
+                    steps {
+                        echo '🧪 Running unit tests...'
+                        sh 'npm run test:unit -- --coverage'
+                    }
+                }
+                
+                stage('Integration Tests') {
+                    steps {
+                        echo '🔗 Running integration tests...'
+                        sh 'npm run test:integration'
+                    }
+                }
+                
+                stage('Security Audit') {
+                    when {
+                        expression { params.RUN_SECURITY_SCAN }
+                    }
+                    steps {
+                        echo '🔒 Running security audit...'
+                        sh 'npm audit --audit-level=moderate || true'
+                    }
+                }
+            }
+        }
+        
+        stage('Build Application') {
+            steps {
+                echo '🔨 Building application...'
+                sh '''
+                    npm run build
+                    echo "Build completed successfully"
+                '''
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo '🐳 Building Docker image...'
+                script {
+                    dockerImage = docker.build(
+                        "${DOCKER_IMAGE}:${BUILD_TAG}",
+                        "--build-arg BUILD_NUMBER=${BUILD_NUMBER} --build-arg GIT_COMMIT=${GIT_COMMIT_SHORT} ."
+                    )
+                }
+            }
+        }
+        
+        stage('Scan Docker Image') {
+            when {
+                expression { params.RUN_SECURITY_SCAN }
+            }
+            steps {
+                echo '🔍 Scanning Docker image for vulnerabilities...'
+                script {
+                    sh """
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                            aquasec/trivy image --severity HIGH,CRITICAL \
+                            --exit-code 0 \
+                            ${DOCKER_IMAGE}:${BUILD_TAG}
+                    """
+                }
+            }
+        }
+        
+        stage('Push Docker Image') {
+            steps {
+                echo '📤 Pushing Docker image to registry...'
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", DOCKER_CREDENTIALS_ID) {
+                        dockerImage.push("${BUILD_TAG}")
+                        dockerImage.push("${params.ENVIRONMENT}-latest")
+                        
+                        if (env.GIT_BRANCH == 'main') {
+                            dockerImage.push("latest")
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Kubernetes') {
+            steps {
+                echo "🚀 Deploying to ${params.ENVIRONMENT} environment..."
+                script {
+                    def namespace = params.ENVIRONMENT
+                    
+                    withCredentials([file(credentialsId: KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                        try {
+                            sh """
+                                # Update deployment
+                                kubectl set image deployment/${APP_NAME} \
+                                    ${APP_NAME}=${DOCKER_IMAGE}:${BUILD_TAG} \
+                                    -n ${namespace}
+                                
+                                # Wait for rollout
+                                kubectl rollout status deployment/${APP_NAME} \
+                                    -n ${namespace} \
+                                    --timeout=5m
+                                
+                                # Verify deployment
+                                kubectl get pods -n ${namespace} -l app=${APP_NAME}
+                            """
+                        } catch (Exception e) {
+                            echo "❌ Deployment failed! Rolling back..."
+                            sh """
+                                kubectl rollout undo deployment/${APP_NAME} -n ${namespace}
+                                kubectl rollout status deployment/${APP_NAME} -n ${namespace}
+                            """
+                            error("Deployment failed and was rolled back: ${e.message}")
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Smoke Tests') {
+            steps {
+                echo '🔥 Running smoke tests...'
+                script {
+                    withCredentials([file(credentialsId: KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                        sh """
+                            # Get service endpoint
+                            SERVICE_IP=\$(kubectl get svc ${APP_NAME}-service -n ${params.ENVIRONMENT} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                            
+                            # Basic health check
+                            echo "Testing endpoint: http://\${SERVICE_IP}/health"
+                            curl -f http://\${SERVICE_IP}/health || exit 1
+                            
+                            echo "✅ Smoke tests passed!"
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Tag Release') {
+            when {
+                allOf {
+                    expression { env.GIT_BRANCH == 'main' }
+                    expression { params.ENVIRONMENT == 'production' }
+                }
+            }
+            steps {
+                echo '🏷️ Tagging release...'
+                script {
+                    sh """
+                        git tag -a v${BUILD_NUMBER} -m "Release ${BUILD_NUMBER}"
+                        git push origin v${BUILD_NUMBER}
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo """
+            ✅ Pipeline Succeeded!
+            - Environment: ${params.ENVIRONMENT}
+            - Build Tag: ${BUILD_TAG}
+            - Image: ${DOCKER_IMAGE}:${BUILD_TAG}
+            """
+            // slackSend color: 'good', message: "✅ Build ${BUILD_NUMBER} deployed to ${params.ENVIRONMENT}"
+        }
+        
+        failure {
+            echo """
+            ❌ Pipeline Failed!
+            - Environment: ${params.ENVIRONMENT}
+            - Build Tag: ${BUILD_TAG}
+            - Check console output for details
+            """
+            // slackSend color: 'danger', message: "❌ Build ${BUILD_NUMBER} failed for ${params.ENVIRONMENT}"
+        }
+        
+        unstable {
+            echo '⚠️ Pipeline is unstable'
+        }
+        
+        always {
+            echo '🧹 Cleaning up workspace...'
+            cleanWs()
+            
+            // Archive test results if they exist
+            junit testResults: '**/test-results/*.xml', allowEmptyResults: true
+        }
+    }
+}

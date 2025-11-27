@@ -1,0 +1,273 @@
+# =============================================================================
+# KUBERNETES DEPLOYMENT
+# =============================================================================
+# Deployment manages the lifecycle of application pods
+# 
+# Key Features:
+# - Rolling updates with zero downtime
+# - Automatic rollback on failure
+# - Scaling (manual and auto)
+# - Self-healing (restarts failed pods)
+#
+# Usage:
+#   Apply:    kubectl apply -f deployment.yaml -n fastapi-app
+#   Status:   kubectl get deployments -n fastapi-app
+#   Pods:     kubectl get pods -n fastapi-app
+#   Logs:     kubectl logs -f deployment/fastapi-deployment -n fastapi-app
+#   Scale:    kubectl scale deployment/fastapi-deployment --replicas=5 -n fastapi-app
+#   Rollout:  kubectl rollout status deployment/fastapi-deployment -n fastapi-app
+#   Rollback: kubectl rollout undo deployment/fastapi-deployment -n fastapi-app
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-deployment
+  namespace: fastapi-app
+  labels:
+    app: fastapi-app
+    version: v1
+spec:
+  # -----------------------------------------------------------------------------
+  # Replica Configuration
+  # -----------------------------------------------------------------------------
+  # Number of pod replicas to run
+  # For production, use at least 3 for high availability
+  replicas: 3
+  
+  # -----------------------------------------------------------------------------
+  # Update Strategy
+  # -----------------------------------------------------------------------------
+  # RollingUpdate ensures zero-downtime deployments
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Maximum number of pods that can be unavailable during update
+      maxUnavailable: 1
+      # Maximum number of pods that can be created above desired replicas
+      maxSurge: 1
+  
+  # -----------------------------------------------------------------------------
+  # Pod Selector
+  # -----------------------------------------------------------------------------
+  # Identifies which pods belong to this deployment
+  selector:
+    matchLabels:
+      app: fastapi-app
+  
+  # -----------------------------------------------------------------------------
+  # Pod Template
+  # -----------------------------------------------------------------------------
+  template:
+    metadata:
+      labels:
+        app: fastapi-app
+        version: v1
+      annotations:
+        # Prometheus scraping configuration
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      # -------------------------------------------------------------------------
+      # Container Configuration
+      # -------------------------------------------------------------------------
+      containers:
+      - name: fastapi-app
+        # IMPORTANT: Update this with your actual image registry and tag
+        # Format: registry/repository:tag
+        # Examples:
+        #   - Docker Hub: username/fastapi-app:v1.0.0
+        #   - AWS ECR: 123456789.dkr.ecr.region.amazonaws.com/fastapi-app:v1.0.0
+        #   - GCR: gcr.io/project-id/fastapi-app:v1.0.0
+        #   - Azure ACR: myregistry.azurecr.io/fastapi-app:v1.0.0
+        image: your-registry/fastapi-app:latest
+        
+        # Image pull policy
+        # - Always: Pull image on every pod start (use for :latest)
+        # - IfNotPresent: Pull only if not cached (use for version tags)
+        # - Never: Never pull, use cached image only
+        imagePullPolicy: Always
+        
+        # Container port
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        
+        # -----------------------------------------------------------------------
+        # Environment Variables
+        # -----------------------------------------------------------------------
+        # Load configuration from ConfigMap and Secrets
+        envFrom:
+        - configMapRef:
+            name: fastapi-config
+        - secretRef:
+            name: fastapi-secrets
+        
+        # Additional environment variables
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        
+        # -----------------------------------------------------------------------
+        # Resource Limits
+        # -----------------------------------------------------------------------
+        # CRITICAL: Always set resource limits in production!
+        # 
+        # Requests: Guaranteed resources (used for scheduling)
+        # Limits: Maximum resources (pod killed if exceeded)
+        #
+        # Guidelines:
+        # - Set requests = limits for guaranteed QoS
+        # - Monitor actual usage and adjust accordingly
+        # - Use Vertical Pod Autoscaler for recommendations
+        resources:
+          requests:
+            # Minimum CPU (1000m = 1 CPU core)
+            cpu: 250m
+            # Minimum memory
+            memory: 512Mi
+          limits:
+            # Maximum CPU
+            cpu: 1000m
+            # Maximum memory
+            memory: 1Gi
+        
+        # -----------------------------------------------------------------------
+        # Liveness Probe
+        # -----------------------------------------------------------------------
+        # Checks if the container is alive
+        # If fails, Kubernetes restarts the container
+        #
+        # Use for: Detecting deadlocks, infinite loops, etc.
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health/live
+            port: 8000
+            scheme: HTTP
+          # Wait 30s before first check (app startup time)
+          initialDelaySeconds: 30
+          # Check every 10 seconds
+          periodSeconds: 10
+          # Timeout for each check
+          timeoutSeconds: 5
+          # Number of consecutive failures before restart
+          failureThreshold: 3
+          # Number of consecutive successes to mark as healthy
+          successThreshold: 1
+        
+        # -----------------------------------------------------------------------
+        # Readiness Probe
+        # -----------------------------------------------------------------------
+        # Checks if the container is ready to serve traffic
+        # If fails, pod is removed from service endpoints
+        #
+        # Use for: Checking database connections, dependencies, etc.
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health/ready
+            port: 8000
+            scheme: HTTP
+          # Wait 20s before first check
+          initialDelaySeconds: 20
+          # Check every 5 seconds
+          periodSeconds: 5
+          # Timeout for each check
+          timeoutSeconds: 3
+          # Number of consecutive failures before marking unready
+          failureThreshold: 3
+          # Number of consecutive successes to mark as ready
+          successThreshold: 1
+        
+        # -----------------------------------------------------------------------
+        # Startup Probe (Optional)
+        # -----------------------------------------------------------------------
+        # Checks if the application has started
+        # Useful for slow-starting applications
+        # Disables liveness/readiness checks until startup succeeds
+        startupProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8000
+            scheme: HTTP
+          # Wait 10s before first check
+          initialDelaySeconds: 10
+          # Check every 5 seconds
+          periodSeconds: 5
+          # Timeout for each check
+          timeoutSeconds: 3
+          # Allow up to 12 failures (60 seconds total)
+          failureThreshold: 12
+        
+        # -----------------------------------------------------------------------
+        # Security Context
+        # -----------------------------------------------------------------------
+        # Security settings for the container
+        securityContext:
+          # Run as non-root user (matches Dockerfile USER)
+          runAsNonRoot: true
+          runAsUser: 1000
+          # Read-only root filesystem (more secure)
+          readOnlyRootFilesystem: false
+          # Don't allow privilege escalation
+          allowPrivilegeEscalation: false
+          # Drop all capabilities
+          capabilities:
+            drop:
+            - ALL
+      
+      # -------------------------------------------------------------------------
+      # Pod-level Configuration
+      # -------------------------------------------------------------------------
+      
+      # Restart policy
+      restartPolicy: Always
+      
+      # DNS policy
+      dnsPolicy: ClusterFirst
+      
+      # Service account (for RBAC)
+      serviceAccountName: default
+      
+      # Image pull secrets (if using private registry)
+      # imagePullSecrets:
+      # - name: registry-credentials
+      
+      # Node selector (schedule pods on specific nodes)
+      # nodeSelector:
+      #   disktype: ssd
+      #   environment: production
+      
+      # Tolerations (allow scheduling on tainted nodes)
+      # tolerations:
+      # - key: "dedicated"
+      #   operator: "Equal"
+      #   value: "fastapi"
+      #   effect: "NoSchedule"
+      
+      # Affinity rules (pod placement preferences)
+      affinity:
+        # Pod anti-affinity: Spread pods across nodes
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - fastapi-app
+              topologyKey: kubernetes.io/hostname

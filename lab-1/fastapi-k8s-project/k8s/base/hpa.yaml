@@ -1,0 +1,148 @@
+# =============================================================================
+# HORIZONTAL POD AUTOSCALER (HPA)
+# =============================================================================
+# Automatically scales the number of pods based on metrics
+# 
+# Purpose:
+# - Handle traffic spikes automatically
+# - Optimize resource usage
+# - Maintain performance under load
+#
+# Metrics Sources:
+# - CPU utilization (built-in)
+# - Memory utilization (built-in)
+# - Custom metrics (requires metrics server)
+#
+# Prerequisites:
+# - Metrics Server must be installed
+# - Resource requests must be set in Deployment
+#
+# Usage:
+#   Apply:    kubectl apply -f hpa.yaml -n fastapi-app
+#   Status:   kubectl get hpa -n fastapi-app
+#   Details:  kubectl describe hpa fastapi-hpa -n fastapi-app
+#   Watch:    kubectl get hpa -n fastapi-app --watch
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fastapi-hpa
+  namespace: fastapi-app
+  labels:
+    app: fastapi-app
+spec:
+  # -----------------------------------------------------------------------------
+  # Target Deployment
+  # -----------------------------------------------------------------------------
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fastapi-deployment
+  
+  # -----------------------------------------------------------------------------
+  # Replica Limits
+  # -----------------------------------------------------------------------------
+  # Minimum number of replicas (always running)
+  minReplicas: 3
+  
+  # Maximum number of replicas (scale up limit)
+  maxReplicas: 10
+  
+  # -----------------------------------------------------------------------------
+  # Scaling Behavior (Optional - Fine-tune scaling)
+  # -----------------------------------------------------------------------------
+  behavior:
+    scaleDown:
+      # Stabilization window: Wait before scaling down
+      stabilizationWindowSeconds: 300
+      policies:
+      # Scale down by max 1 pod per 60 seconds
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      # Or scale down by max 10% per 60 seconds
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      # Use the policy that scales down the least
+      selectPolicy: Min
+    
+    scaleUp:
+      # Stabilization window: Wait before scaling up
+      stabilizationWindowSeconds: 0
+      policies:
+      # Scale up by max 2 pods per 60 seconds
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      # Or scale up by max 50% per 60 seconds
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      # Use the policy that scales up the most
+      selectPolicy: Max
+  
+  # -----------------------------------------------------------------------------
+  # Metrics Configuration
+  # -----------------------------------------------------------------------------
+  metrics:
+  # Metric 1: CPU Utilization
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        # Scale when average CPU across all pods exceeds 70%
+        averageUtilization: 70
+  
+  # Metric 2: Memory Utilization
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        # Scale when average memory across all pods exceeds 80%
+        averageUtilization: 80
+  
+  # Metric 3: Custom Metric (Example - Requests per second)
+  # Requires custom metrics API
+  # - type: Pods
+  #   pods:
+  #     metric:
+  #       name: http_requests_per_second
+  #     target:
+  #       type: AverageValue
+  #       averageValue: "1000"
+
+---
+# =============================================================================
+# VERTICAL POD AUTOSCALER (VPA) - Optional
+# =============================================================================
+# Automatically adjusts CPU and memory requests/limits
+# 
+# Note: VPA and HPA should not target the same metrics
+# Use VPA for right-sizing, HPA for scaling
+# =============================================================================
+
+# apiVersion: autoscaling.k8s.io/v1
+# kind: VerticalPodAutoscaler
+# metadata:
+#   name: fastapi-vpa
+#   namespace: fastapi-app
+# spec:
+#   targetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: fastapi-deployment
+#   updatePolicy:
+#     updateMode: "Auto"  # Auto, Recreate, Initial, or Off
+#   resourcePolicy:
+#     containerPolicies:
+#     - containerName: fastapi-app
+#       minAllowed:
+#         cpu: 100m
+#         memory: 256Mi
+#       maxAllowed:
+#         cpu: 2000m
+#         memory: 2Gi

@@ -1,0 +1,49 @@
+# =============================================================================
+# KUBERNETES CONFIGMAP
+# =============================================================================
+# ConfigMaps store non-sensitive configuration data as key-value pairs
+# 
+# Purpose:
+# - Decouple configuration from container images
+# - Update configuration without rebuilding images
+# - Share configuration across multiple pods
+#
+# Usage:
+#   kubectl apply -f configmap.yaml -n fastapi-app
+#   kubectl get configmap -n fastapi-app
+#   kubectl describe configmap fastapi-config -n fastapi-app
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fastapi-config
+  namespace: fastapi-app
+  labels:
+    app: fastapi-app
+data:
+  # Application configuration
+  PROJECT_NAME: "FastAPI Production App"
+  VERSION: "1.0.0"
+  ENVIRONMENT: "production"
+  
+  # API configuration
+  API_V1_PREFIX: "/api/v1"
+  ALLOWED_ORIGINS: "https://yourdomain.com,https://www.yourdomain.com"
+  
+  # Database configuration (non-sensitive)
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "20"
+  
+  # Redis configuration (non-sensitive)
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  
+  # Logging
+  LOG_LEVEL: "INFO"
+  
+  # Performance
+  WORKERS: "4"
+  MAX_CONNECTIONS: "100"
+  TIMEOUT: "30"

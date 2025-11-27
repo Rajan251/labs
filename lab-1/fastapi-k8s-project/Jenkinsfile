@@ -1,0 +1,373 @@
+// =============================================================================
+// JENKINS DECLARATIVE PIPELINE
+// =============================================================================
+// This Jenkinsfile defines a complete CI/CD pipeline for FastAPI application
+// 
+// Pipeline Stages:
+// 1. Checkout: Get code from Git
+// 2. Build: Build Docker image
+// 3. Test: Run unit tests
+// 4. Security Scan: Scan for vulnerabilities
+// 5. Push: Push image to registry
+// 6. Deploy: Deploy to Kubernetes
+//
+// Prerequisites:
+// - Jenkins with Docker and Kubernetes plugins
+// - Credentials configured in Jenkins
+// - Kubernetes cluster access
+// =============================================================================
+
+pipeline {
+    // -------------------------------------------------------------------------
+    // Agent Configuration
+    // -------------------------------------------------------------------------
+    // Run on any available agent with Docker
+    agent {
+        label 'docker'
+    }
+    
+    // -------------------------------------------------------------------------
+    // Environment Variables
+    // -------------------------------------------------------------------------
+    environment {
+        // Docker Registry Configuration
+        DOCKER_REGISTRY = 'your-registry.com'
+        DOCKER_IMAGE_NAME = 'fastapi-app'
+        DOCKER_IMAGE_TAG = "${env.BUILD_NUMBER}"
+        DOCKER_IMAGE_LATEST = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest"
+        DOCKER_IMAGE_VERSIONED = "${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+        
+        // Kubernetes Configuration
+        K8S_NAMESPACE = 'fastapi-app'
+        K8S_DEPLOYMENT = 'fastapi-deployment'
+        
+        // Credentials (stored in Jenkins)
+        DOCKER_CREDENTIALS_ID = 'docker-registry-credentials'
+        K8S_CREDENTIALS_ID = 'kubernetes-credentials'
+        SONAR_CREDENTIALS_ID = 'sonarqube-token'
+        
+        // Application Configuration
+        APP_NAME = 'FastAPI Production App'
+        
+        // Git Configuration
+        GIT_COMMIT_SHORT = sh(
+            script: "git rev-parse --short HEAD",
+            returnStdout: true
+        ).trim()
+    }
+    
+    // -------------------------------------------------------------------------
+    // Build Options
+    // -------------------------------------------------------------------------
+    options {
+        // Keep only last 10 builds
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        
+        // Timeout for entire pipeline
+        timeout(time: 30, unit: 'MINUTES')
+        
+        // Disable concurrent builds
+        disableConcurrentBuilds()
+        
+        // Add timestamps to console output
+        timestamps()
+        
+        // ANSI color output
+        ansiColor('xterm')
+    }
+    
+    // -------------------------------------------------------------------------
+    // Pipeline Stages
+    // -------------------------------------------------------------------------
+    stages {
+        
+        // ---------------------------------------------------------------------
+        // Stage 1: Checkout Code
+        // ---------------------------------------------------------------------
+        stage('Checkout') {
+            steps {
+                script {
+                    echo "========================================="
+                    echo "Stage: Checkout Code"
+                    echo "========================================="
+                    echo "Branch: ${env.GIT_BRANCH}"
+                    echo "Commit: ${env.GIT_COMMIT_SHORT}"
+                }
+                
+                // Checkout code from Git
+                checkout scm
+                
+                // Display Git information
+                sh '''
+                    echo "Git Information:"
+                    git log -1 --pretty=format:"%h - %an, %ar : %s"
+                '''
+            }
+        }
+        
+        // ---------------------------------------------------------------------
+        // Stage 2: Build Docker Image
+        // ---------------------------------------------------------------------
+        stage('Build') {
+            steps {
+                script {
+                    echo "========================================="
+                    echo "Stage: Build Docker Image"
+                    echo "========================================="
+                    echo "Image: ${DOCKER_IMAGE_VERSIONED}"
+                }
+                
+                // Build Docker image
+                sh """
+                    docker build \
+                        --tag ${DOCKER_IMAGE_VERSIONED} \
+                        --tag ${DOCKER_IMAGE_LATEST} \
+                        --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                        --build-arg VCS_REF=${GIT_COMMIT_SHORT} \
+                        --build-arg VERSION=${DOCKER_IMAGE_TAG} \
+                        --file Dockerfile \
+                        .
+                """
+                
+                // Verify image was created
+                sh "docker images | grep ${DOCKER_IMAGE_NAME}"
+            }
+        }
+        
+        // ---------------------------------------------------------------------
+        // Stage 3: Run Tests
+        // ---------------------------------------------------------------------
+        stage('Test') {
+            steps {
+                script {
+                    echo "========================================="
+                    echo "Stage: Run Tests"
+                    echo "========================================="
+                }
+                
+                // Run tests in Docker container
+                sh """
+                    docker run --rm \
+                        ${DOCKER_IMAGE_VERSIONED} \
+                        pytest app/tests/ \
+                            --verbose \
+                            --cov=app \
+                            --cov-report=xml \
+                            --cov-report=html \
+                            --junitxml=test-results.xml
+                """
+            }
+            
+            post {
+                always {
+                    // Publish test results
+                    junit 'test-results.xml'
+                    
+                    // Publish coverage report
+                    publishHTML([
+                        reportDir: 'htmlcov',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report'
+                    ])
+                }
+            }
+        }
+        
+        // ---------------------------------------------------------------------
+        // Stage 4: Security Scan
+        // ---------------------------------------------------------------------
+        stage('Security Scan') {
+            parallel {
+                // Scan 1: Trivy - Container vulnerability scanning
+                stage('Trivy Scan') {
+                    steps {
+                        script {
+                            echo "Running Trivy security scan..."
+                        }
+                        
+                        sh """
+                            # Install Trivy if not present
+                            if ! command -v trivy &> /dev/null; then
+                                wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+                                echo "deb https://aquasecurity.github.io/trivy-repo/deb \$(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+                                sudo apt-get update
+                                sudo apt-get install trivy
+                            fi
+                            
+                            # Run Trivy scan
+                            trivy image \
+                                --severity HIGH,CRITICAL \
+                                --format json \
+                                --output trivy-report.json \
+                                ${DOCKER_IMAGE_VERSIONED}
+                        """
+                    }
+                }
+                
+                // Scan 2: SonarQube - Code quality analysis
+                stage('SonarQube Scan') {
+                    steps {
+                        script {
+                            echo "Running SonarQube analysis..."
+                        }
+                        
+                        withSonarQubeEnv('SonarQube') {
+                            sh """
+                                sonar-scanner \
+                                    -Dsonar.projectKey=fastapi-app \
+                                    -Dsonar.sources=app \
+                                    -Dsonar.python.coverage.reportPaths=coverage.xml \
+                                    -Dsonar.tests=app/tests
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ---------------------------------------------------------------------
+        // Stage 5: Push to Registry
+        // ---------------------------------------------------------------------
+        stage('Push') {
+            steps {
+                script {
+                    echo "========================================="
+                    echo "Stage: Push to Docker Registry"
+                    echo "========================================="
+                }
+                
+                // Login to Docker registry and push
+                withCredentials([usernamePassword(
+                    credentialsId: DOCKER_CREDENTIALS_ID,
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh """
+                        echo \$DOCKER_PASS | docker login ${DOCKER_REGISTRY} -u \$DOCKER_USER --password-stdin
+                        
+                        # Push versioned image
+                        docker push ${DOCKER_IMAGE_VERSIONED}
+                        
+                        # Push latest tag
+                        docker push ${DOCKER_IMAGE_LATEST}
+                        
+                        docker logout ${DOCKER_REGISTRY}
+                    """
+                }
+                
+                echo "Successfully pushed images:"
+                echo "  - ${DOCKER_IMAGE_VERSIONED}"
+                echo "  - ${DOCKER_IMAGE_LATEST}"
+            }
+        }
+        
+        // ---------------------------------------------------------------------
+        // Stage 6: Deploy to Kubernetes
+        // ---------------------------------------------------------------------
+        stage('Deploy') {
+            steps {
+                script {
+                    echo "========================================="
+                    echo "Stage: Deploy to Kubernetes"
+                    echo "========================================="
+                    echo "Namespace: ${K8S_NAMESPACE}"
+                    echo "Deployment: ${K8S_DEPLOYMENT}"
+                }
+                
+                // Deploy to Kubernetes
+                withKubeConfig([credentialsId: K8S_CREDENTIALS_ID]) {
+                    sh """
+                        # Update deployment image
+                        kubectl set image deployment/${K8S_DEPLOYMENT} \
+                            fastapi-app=${DOCKER_IMAGE_VERSIONED} \
+                            -n ${K8S_NAMESPACE}
+                        
+                        # Wait for rollout to complete
+                        kubectl rollout status deployment/${K8S_DEPLOYMENT} \
+                            -n ${K8S_NAMESPACE} \
+                            --timeout=5m
+                        
+                        # Verify deployment
+                        kubectl get pods -n ${K8S_NAMESPACE} -l app=fastapi-app
+                    """
+                }
+                
+                echo "Deployment completed successfully!"
+            }
+        }
+        
+        // ---------------------------------------------------------------------
+        // Stage 7: Smoke Tests
+        // ---------------------------------------------------------------------
+        stage('Smoke Tests') {
+            steps {
+                script {
+                    echo "========================================="
+                    echo "Stage: Running Smoke Tests"
+                    echo "========================================="
+                }
+                
+                // Run smoke tests against deployed application
+                sh """
+                    # Get service URL
+                    SERVICE_URL=\$(kubectl get ingress fastapi-ingress \
+                        -n ${K8S_NAMESPACE} \
+                        -o jsonpath='{.spec.rules[0].host}')
+                    
+                    # Health check
+                    curl -f https://\${SERVICE_URL}/api/v1/health || exit 1
+                    
+                    # Readiness check
+                    curl -f https://\${SERVICE_URL}/api/v1/health/ready || exit 1
+                    
+                    echo "Smoke tests passed!"
+                """
+            }
+        }
+    }
+    
+    // -------------------------------------------------------------------------
+    // Post-Build Actions
+    // -------------------------------------------------------------------------
+    post {
+        always {
+            // Clean up Docker images
+            sh """
+                docker rmi ${DOCKER_IMAGE_VERSIONED} || true
+                docker rmi ${DOCKER_IMAGE_LATEST} || true
+                docker system prune -f
+            """
+            
+            // Archive artifacts
+            archiveArtifacts artifacts: '**/*.xml, **/*.json', allowEmptyArchive: true
+        }
+        
+        success {
+            echo "========================================="
+            echo "Pipeline completed successfully!"
+            echo "========================================="
+            
+            // Send success notification (example: Slack)
+            // slackSend(
+            //     color: 'good',
+            //     message: "Deployment successful: ${APP_NAME} v${DOCKER_IMAGE_TAG}"
+            // )
+        }
+        
+        failure {
+            echo "========================================="
+            echo "Pipeline failed!"
+            echo "========================================="
+            
+            // Send failure notification
+            // slackSend(
+            //     color: 'danger',
+            //     message: "Deployment failed: ${APP_NAME} v${DOCKER_IMAGE_TAG}"
+            // )
+        }
+        
+        unstable {
+            echo "Pipeline is unstable"
+        }
+    }
+}

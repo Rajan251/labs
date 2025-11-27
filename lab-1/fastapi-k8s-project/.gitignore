@@ -1,0 +1,22 @@
+# Git ignore file
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+.env
+.env.local
+*.db
+*.sqlite
+.DS_Store
+.vscode/
+.idea/
+*.swp

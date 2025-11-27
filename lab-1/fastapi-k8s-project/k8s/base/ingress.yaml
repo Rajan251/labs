@@ -1,0 +1,179 @@
+# =============================================================================
+# KUBERNETES INGRESS
+# =============================================================================
+# Ingress manages external HTTP/HTTPS access to services
+# 
+# Purpose:
+# - External access to services
+# - SSL/TLS termination
+# - Path-based routing
+# - Host-based routing
+# - Load balancing
+#
+# Prerequisites:
+# - Ingress controller must be installed (nginx, traefik, etc.)
+# - For HTTPS: TLS certificate secret must exist
+#
+# Popular Ingress Controllers:
+# - NGINX Ingress Controller (most common)
+# - Traefik
+# - HAProxy
+# - AWS ALB Ingress Controller
+# - GCE Ingress Controller
+#
+# Usage:
+#   Apply:    kubectl apply -f ingress.yaml -n fastapi-app
+#   Status:   kubectl get ingress -n fastapi-app
+#   Details:  kubectl describe ingress fastapi-ingress -n fastapi-app
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fastapi-ingress
+  namespace: fastapi-app
+  labels:
+    app: fastapi-app
+  annotations:
+    # -------------------------------------------------------------------------
+    # Ingress Controller Annotations (NGINX example)
+    # -------------------------------------------------------------------------
+    
+    # Ingress class (specify which controller to use)
+    kubernetes.io/ingress.class: "nginx"
+    
+    # SSL/TLS Configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # CORS Configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://yourdomain.com"
+    
+    # Rate Limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    
+    # Request Size Limits
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    
+    # WebSocket Support (if needed)
+    # nginx.ingress.kubernetes.io/websocket-services: "fastapi-service"
+    
+    # Custom Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+
+spec:
+  # -----------------------------------------------------------------------------
+  # TLS Configuration
+  # -----------------------------------------------------------------------------
+  # HTTPS configuration with TLS certificates
+  tls:
+  - hosts:
+    - api.yourdomain.com
+    - www.api.yourdomain.com
+    # Secret containing TLS certificate and key
+    # Create with: kubectl create secret tls fastapi-tls --cert=cert.pem --key=key.pem -n fastapi-app
+    # Or use cert-manager for automatic certificate management
+    secretName: fastapi-tls
+  
+  # -----------------------------------------------------------------------------
+  # Routing Rules
+  # -----------------------------------------------------------------------------
+  rules:
+  # Rule 1: Main API domain
+  - host: api.yourdomain.com
+    http:
+      paths:
+      # Route all paths to the FastAPI service
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: fastapi-service
+            port:
+              number: 80
+  
+  # Rule 2: Alternative domain (optional)
+  - host: www.api.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: fastapi-service
+            port:
+              number: 80
+
+---
+# =============================================================================
+# PATH-BASED ROUTING EXAMPLE
+# =============================================================================
+# Route different paths to different services
+# =============================================================================
+
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: fastapi-ingress-paths
+#   namespace: fastapi-app
+# spec:
+#   rules:
+#   - host: yourdomain.com
+#     http:
+#       paths:
+#       # API v1
+#       - path: /api/v1
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: fastapi-service-v1
+#             port:
+#               number: 80
+#       # API v2
+#       - path: /api/v2
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: fastapi-service-v2
+#             port:
+#               number: 80
+#       # Documentation
+#       - path: /docs
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: docs-service
+#             port:
+#               number: 80
+
+---
+# =============================================================================
+# CERT-MANAGER CERTIFICATE (Optional)
+# =============================================================================
+# Automatic TLS certificate management with Let's Encrypt
+# Requires cert-manager to be installed
+# =============================================================================
+
+# apiVersion: cert-manager.io/v1
+# kind: Certificate
+# metadata:
+#   name: fastapi-cert
+#   namespace: fastapi-app
+# spec:
+#   secretName: fastapi-tls
+#   issuerRef:
+#     name: letsencrypt-prod
+#     kind: ClusterIssuer
+#   dnsNames:
+#   - api.yourdomain.com
+#   - www.api.yourdomain.com

@@ -1,0 +1,97 @@
+# =============================================================================
+# KUBERNETES SERVICE
+# =============================================================================
+# Service provides stable networking for pods
+# 
+# Purpose:
+# - Load balancing across pod replicas
+# - Service discovery (DNS name)
+# - Stable IP address (pods have ephemeral IPs)
+#
+# Service Types:
+# - ClusterIP: Internal only (default)
+# - NodePort: Exposes on each node's IP
+# - LoadBalancer: Cloud provider load balancer
+# - ExternalName: DNS CNAME record
+#
+# Usage:
+#   Apply:    kubectl apply -f service.yaml -n fastapi-app
+#   Status:   kubectl get svc -n fastapi-app
+#   Details:  kubectl describe svc fastapi-service -n fastapi-app
+#   Endpoints: kubectl get endpoints fastapi-service -n fastapi-app
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-service
+  namespace: fastapi-app
+  labels:
+    app: fastapi-app
+  annotations:
+    # Cloud provider annotations (example for AWS)
+    # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    
+    # Prometheus monitoring
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+spec:
+  # -----------------------------------------------------------------------------
+  # Service Type
+  # -----------------------------------------------------------------------------
+  # ClusterIP: Internal service (use with Ingress for external access)
+  # LoadBalancer: External service with cloud load balancer
+  type: ClusterIP
+  
+  # -----------------------------------------------------------------------------
+  # Pod Selector
+  # -----------------------------------------------------------------------------
+  # Routes traffic to pods with these labels
+  selector:
+    app: fastapi-app
+  
+  # -----------------------------------------------------------------------------
+  # Ports Configuration
+  # -----------------------------------------------------------------------------
+  ports:
+  - name: http
+    # Port exposed by the service
+    port: 80
+    # Port on the container
+    targetPort: 8000
+    # Protocol
+    protocol: TCP
+  
+  # -----------------------------------------------------------------------------
+  # Session Affinity
+  # -----------------------------------------------------------------------------
+  # None: Random load balancing (default)
+  # ClientIP: Same client always goes to same pod
+  sessionAffinity: None
+  
+  # Session affinity timeout (if using ClientIP)
+  # sessionAffinityConfig:
+  #   clientIP:
+  #     timeoutSeconds: 10800
+
+---
+# =============================================================================
+# HEADLESS SERVICE (Optional)
+# =============================================================================
+# Used for StatefulSets or when you need direct pod IPs
+# Set clusterIP: None to create a headless service
+# =============================================================================
+
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: fastapi-headless
+#   namespace: fastapi-app
+# spec:
+#   clusterIP: None
+#   selector:
+#     app: fastapi-app
+#   ports:
+#   - port: 8000
+#     targetPort: 8000

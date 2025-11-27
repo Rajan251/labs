@@ -1,0 +1,86 @@
+# =============================================================================
+# DOCKER IGNORE FILE
+# =============================================================================
+# This file tells Docker which files/directories to exclude when building
+# the image. This reduces build context size and speeds up builds.
+#
+# Benefits:
+# - Faster builds (less data to send to Docker daemon)
+# - Smaller images (excludes unnecessary files)
+# - Better security (excludes sensitive files)
+# =============================================================================
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.cover
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+
+# CI/CD files (not needed in container)
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# Kubernetes manifests (not needed in container)
+k8s/
+*.yaml
+*.yml
+
+# Docker files (not needed in container)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

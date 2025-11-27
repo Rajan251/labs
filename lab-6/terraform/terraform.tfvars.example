@@ -1,0 +1,38 @@
+# ============================================================================
+# Terraform Variables - Example Configuration
+# ============================================================================
+# Copy this file to terraform.tfvars and customize for your environment
+# WARNING: Do not commit terraform.tfvars to version control!
+# ============================================================================
+
+# General Configuration
+project_name = "terraform-ansible"
+environment  = "dev"
+owner        = "DevOps Team"
+
+# AWS Configuration
+aws_region = "us-east-1"
+
+# Network Configuration
+vpc_cidr         = "10.0.0.0/16"
+subnet_count     = 2
+allowed_ssh_cidr = "0.0.0.0/0"  # ⚠️ CHANGE THIS TO YOUR IP FOR SECURITY!
+                                 # Example: "203.0.113.0/32"
+
+# EC2 Instance Configuration
+instance_type       = "t2.micro"
+web_instance_count  = 2
+app_instance_count  = 1
+
+# SSH Key Configuration
+ssh_public_key_path  = "~/.ssh/terraform-key.pub"
+ssh_private_key_path = "~/.ssh/terraform-key"
+
+# Ansible Configuration
+ansible_user = "ubuntu"
+
+# Additional Tags (Optional)
+additional_tags = {
+  CostCenter = "Engineering"
+  Team       = "DevOps"
+}

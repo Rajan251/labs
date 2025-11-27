@@ -1,0 +1,158 @@
+---
+# ============================================================================
+# Kubernetes Tools Role - Main Tasks
+# ============================================================================
+# This role installs kubectl, helm, and other Kubernetes client tools
+# ============================================================================
+
+- name: Install dependencies for Kubernetes tools
+  apt:
+    name:
+      - curl
+      - apt-transport-https
+      - ca-certificates
+    state: present
+  tags:
+    - k8s
+    - packages
+
+- name: Download kubectl binary
+  get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+    force: yes
+  tags:
+    - k8s
+    - kubectl
+
+- name: Verify kubectl installation
+  command: kubectl version --client --short
+  register: kubectl_version_output
+  changed_when: false
+  tags:
+    - k8s
+    - kubectl
+    - verify
+
+- name: Display kubectl version
+  debug:
+    msg: "{{ kubectl_version_output.stdout }}"
+  tags:
+    - k8s
+    - kubectl
+
+- name: Download Helm installation script
+  get_url:
+    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    dest: /tmp/get_helm.sh
+    mode: '0755'
+  tags:
+    - k8s
+    - helm
+
+- name: Install Helm
+  command: /tmp/get_helm.sh
+  args:
+    creates: /usr/local/bin/helm
+  tags:
+    - k8s
+    - helm
+
+- name: Remove Helm installation script
+  file:
+    path: /tmp/get_helm.sh
+    state: absent
+  tags:
+    - k8s
+    - helm
+
+- name: Verify Helm installation
+  command: helm version --short
+  register: helm_version_output
+  changed_when: false
+  tags:
+    - k8s
+    - helm
+    - verify
+
+- name: Display Helm version
+  debug:
+    msg: "{{ helm_version_output.stdout }}"
+  tags:
+    - k8s
+    - helm
+
+- name: Add Helm stable repository
+  command: helm repo add stable https://charts.helm.sh/stable
+  register: helm_repo_add
+  changed_when: "'has been added' in helm_repo_add.stdout"
+  failed_when: false
+  tags:
+    - k8s
+    - helm
+
+- name: Update Helm repositories
+  command: helm repo update
+  changed_when: false
+  tags:
+    - k8s
+    - helm
+
+- name: Install kubeadm (optional)
+  block:
+    - name: Add Kubernetes GPG key
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
+        keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        state: present
+
+    - name: Add Kubernetes repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        state: present
+        filename: kubernetes
+
+    - name: Install kubeadm, kubelet
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+        state: present
+        update_cache: yes
+
+    - name: Hold kubelet and kubeadm at current version
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+  when: install_kubeadm | default(false)
+  tags:
+    - k8s
+    - kubeadm
+
+- name: Create .kube directory for ansible user
+  file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+  tags:
+    - k8s
+    - config
+
+- name: Display completion message
+  debug:
+    msg: |
+      Kubernetes tools installed successfully:
+      - kubectl {{ kubectl_version }}
+      - Helm (latest)
+      {% if install_kubeadm | default(false) %}
+      - kubeadm (latest)
+      - kubelet (latest)
+      {% endif %}
+  tags:
+    - k8s

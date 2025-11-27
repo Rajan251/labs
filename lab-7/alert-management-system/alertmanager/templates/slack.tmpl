@@ -1,0 +1,30 @@
+{{ define "slack.default.text" }}
+{{ if eq .Status "firing" }}:fire:{{ else }}:white_check_mark:{{ end }} *[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}*
+
+*Summary:* {{ .CommonAnnotations.summary }}
+
+{{ if .CommonAnnotations.description }}
+*Description:*
+```
+{{ .CommonAnnotations.description }}
+```
+{{ end }}
+
+*Details:*
+• Cluster: `{{ .CommonLabels.cluster }}`
+• Environment: `{{ .CommonLabels.environment }}`
+• Severity: `{{ .CommonLabels.severity }}`
+• Firing: {{ .Alerts.Firing | len }}
+• Resolved: {{ .Alerts.Resolved | len }}
+
+{{ if gt (len .Alerts.Firing) 0 }}
+*Firing Alerts:*
+{{ range .Alerts.Firing }}
+  • {{ .Labels.alertname }} on `{{ .Labels.instance }}`
+{{ end }}
+{{ end }}
+
+{{ if .CommonAnnotations.runbook_url }}
+:book: <{{ .CommonAnnotations.runbook_url }}|View Runbook>
+{{ end }}
+{{ end }}

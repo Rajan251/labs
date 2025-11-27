@@ -1,0 +1,207 @@
+{{ define "email.default.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .status-firing {
+            background-color: #dc3545;
+        }
+        .status-resolved {
+            background-color: #28a745;
+        }
+        .alert-box {
+            border-left: 4px solid #667eea;
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        .alert-critical {
+            border-left-color: #dc3545;
+        }
+        .alert-warning {
+            border-left-color: #ffc107;
+        }
+        .alert-info {
+            border-left-color: #17a2b8;
+        }
+        .label {
+            display: inline-block;
+            padding: 3px 8px;
+            margin: 2px;
+            border-radius: 3px;
+            font-size: 12px;
+            background-color: #e9ecef;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            font-size: 12px;
+            color: #6c757d;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px 5px;
+            background-color: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header {{ if eq .Status "firing" }}status-firing{{ else }}status-resolved{{ end }}">
+        <h1>
+            {{ if eq .Status "firing" }}🔥 ALERT FIRING{{ else }}✅ ALERT RESOLVED{{ end }}
+        </h1>
+        <h2>{{ .GroupLabels.alertname }}</h2>
+    </div>
+
+    <div style="margin: 20px 0;">
+        <strong>Status:</strong> {{ .Status | toUpper }}<br>
+        <strong>Cluster:</strong> {{ .CommonLabels.cluster }}<br>
+        <strong>Environment:</strong> {{ .CommonLabels.environment }}<br>
+        <strong>Severity:</strong> <span class="label">{{ .CommonLabels.severity | toUpper }}</span>
+    </div>
+
+    <h3>Summary</h3>
+    <p>{{ .CommonAnnotations.summary }}</p>
+
+    {{ if .CommonAnnotations.description }}
+    <h3>Description</h3>
+    <div class="alert-box alert-{{ .CommonLabels.severity }}">
+        <pre>{{ .CommonAnnotations.description }}</pre>
+    </div>
+    {{ end }}
+
+    <h3>Alert Details</h3>
+    <table>
+        <tr>
+            <th>Metric</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Firing Alerts</td>
+            <td><strong>{{ .Alerts.Firing | len }}</strong></td>
+        </tr>
+        <tr>
+            <td>Resolved Alerts</td>
+            <td><strong>{{ .Alerts.Resolved | len }}</strong></td>
+        </tr>
+    </table>
+
+    {{ if gt (len .Alerts.Firing) 0 }}
+    <h3>Firing Alerts</h3>
+    {{ range .Alerts.Firing }}
+    <div class="alert-box alert-{{ .Labels.severity }}">
+        <strong>{{ .Labels.alertname }}</strong><br>
+        <strong>Instance:</strong> {{ .Labels.instance }}<br>
+        {{ if .Annotations.description }}
+        <p>{{ .Annotations.description }}</p>
+        {{ end }}
+        <small>Started: {{ .StartsAt }}</small>
+    </div>
+    {{ end }}
+    {{ end }}
+
+    {{ if gt (len .Alerts.Resolved) 0 }}
+    <h3>Resolved Alerts</h3>
+    {{ range .Alerts.Resolved }}
+    <div class="alert-box">
+        <strong>{{ .Labels.alertname }}</strong><br>
+        <strong>Instance:</strong> {{ .Labels.instance }}<br>
+        <small>Resolved: {{ .EndsAt }}</small>
+    </div>
+    {{ end }}
+    {{ end }}
+
+    <div style="margin: 30px 0;">
+        <a href="http://localhost:9090/alerts" class="button">View in Prometheus</a>
+        <a href="http://localhost:9093" class="button">View in Alertmanager</a>
+        {{ if .CommonAnnotations.runbook_url }}
+        <a href="{{ .CommonAnnotations.runbook_url }}" class="button">View Runbook</a>
+        {{ end }}
+    </div>
+
+    <div class="footer">
+        <p>
+            This alert was sent by Prometheus Alertmanager.<br>
+            Time: {{ .CommonAnnotations.timestamp }}<br>
+            External URL: {{ .ExternalURL }}
+        </p>
+    </div>
+</body>
+</html>
+{{ end }}
+
+{{ define "email.default.text" }}
+[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}
+
+Summary: {{ .CommonAnnotations.summary }}
+
+{{ if .CommonAnnotations.description }}
+Description:
+{{ .CommonAnnotations.description }}
+{{ end }}
+
+Details:
+- Cluster: {{ .CommonLabels.cluster }}
+- Environment: {{ .CommonLabels.environment }}
+- Severity: {{ .CommonLabels.severity }}
+- Firing: {{ .Alerts.Firing | len }}
+- Resolved: {{ .Alerts.Resolved | len }}
+
+{{ if gt (len .Alerts.Firing) 0 }}
+Firing Alerts:
+{{ range .Alerts.Firing }}
+  - {{ .Labels.alertname }} on {{ .Labels.instance }}
+    Started: {{ .StartsAt }}
+{{ end }}
+{{ end }}
+
+{{ if gt (len .Alerts.Resolved) 0 }}
+Resolved Alerts:
+{{ range .Alerts.Resolved }}
+  - {{ .Labels.alertname }} on {{ .Labels.instance }}
+    Resolved: {{ .EndsAt }}
+{{ end }}
+{{ end }}
+
+View in Prometheus: http://localhost:9090/alerts
+View in Alertmanager: http://localhost:9093
+{{ if .CommonAnnotations.runbook_url }}
+Runbook: {{ .CommonAnnotations.runbook_url }}
+{{ end }}
+{{ end }}

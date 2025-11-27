@@ -1,0 +1,73 @@
+# ============================================
+# BLACKBOX EXPORTER CONFIGURATION
+# ============================================
+# Defines probe modules for endpoint monitoring
+# ============================================
+
+modules:
+  # ------------------------------------------
+  # HTTP 2xx - Check for successful HTTP response
+  # ------------------------------------------
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200, 201, 202, 204]
+      method: GET
+      follow_redirects: true
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+      preferred_ip_protocol: "ip4"
+  
+  # ------------------------------------------
+  # HTTP POST - Check POST endpoint
+  # ------------------------------------------
+  http_post_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      method: POST
+      headers:
+        Content-Type: application/json
+      body: '{"test": true}'
+  
+  # ------------------------------------------
+  # HTTPS - Check HTTPS with SSL verification
+  # ------------------------------------------
+  http_2xx_ssl:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200]
+      fail_if_not_ssl: true
+      tls_config:
+        insecure_skip_verify: false
+  
+  # ------------------------------------------
+  # TCP Connect - Check TCP connectivity
+  # ------------------------------------------
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+  
+  # ------------------------------------------
+  # ICMP Ping - Check host reachability
+  # ------------------------------------------
+  icmp:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip4"
+  
+  # ------------------------------------------
+  # DNS - Check DNS resolution
+  # ------------------------------------------
+  dns_check:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: "example.com"
+      query_type: "A"

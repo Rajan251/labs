@@ -1,0 +1,471 @@
+version: '3.8'
+
+# ============================================
+# ALERT MANAGEMENT SYSTEM - DOCKER COMPOSE
+# ============================================
+# This file orchestrates:
+# - Prometheus (metrics collection)
+# - Alertmanager (alert routing)
+# - Node Exporter (system metrics)
+# - Blackbox Exporter (endpoint monitoring)
+# ============================================
+
+services:
+  # ==========================================
+  # PROMETHEUS - Metrics Collection & Storage
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: prometheus
+    hostname: prometheus
+    restart: unless-stopped
+
+    # Command-line flags
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d' # Keep data for 30 days
+      - '--storage.tsdb.retention.size=10GB' # Max storage size
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle' # Enable reload via API
+      - '--web.enable-admin-api' # Enable admin API
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/rules:/etc/prometheus/rules:ro
+      - ../prometheus/targets:/etc/prometheus/targets:ro
+      - prometheus_data:/prometheus
+
+    networks:
+      - monitoring
+
+    depends_on:
+      - alertmanager
+
+    labels:
+      - "com.monitoring.service=prometheus"
+      - "com.monitoring.description=Metrics collection and storage"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==========================================
+  # ALERTMANAGER - Alert Routing & Management
+  # ==========================================
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: alertmanager
+    hostname: alertmanager
+    restart: unless-stopped
+
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--cluster.advertise-address=0.0.0.0:9093'
+
+    ports:
+      - "9093:9093"
+
+    volumes:
+      - ../alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ../alertmanager/templates:/etc/alertmanager/templates:ro
+      - alertmanager_data:/alertmanager
+
+    networks:
+      - monitoring
+
+    environment:
+      - PAGERDUTY_INTEGRATION_KEY=${PAGERDUTY_INTEGRATION_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - SMTP_FROM=${SMTP_FROM:-alerts@example.com}
+      - SMTP_SMARTHOST=${SMTP_SMARTHOST:-smtp.gmail.com:587}
+      - SMTP_AUTH_USERNAME=${SMTP_AUTH_USERNAME:-}
+      - SMTP_AUTH_PASSWORD=${SMTP_AUTH_PASSWORD:-}
+
+    labels:
+      - "com.monitoring.service=alertmanager"
+      - "com.monitoring.description=Alert routing and deduplication"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ==========================================
+  # NODE EXPORTER - System Metrics
+  # ==========================================
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: node-exporter
+    hostname: node-exporter
+    restart: unless-stopped
+
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.netclass.ignored-devices=^(veth.*|docker.*|br-.*)$$'
+      - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$$'
+
+    ports:
+      - "9100:9100"
+
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=node-exporter"
+      - "com.monitoring.description=System and hardware metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # BLACKBOX EXPORTER - Endpoint Monitoring
+  # ==========================================
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: blackbox-exporter
+    hostname: blackbox-exporter
+    restart: unless-stopped
+
+    command:
+      - '--config.file=/etc/blackbox/blackbox.yml'
+
+    ports:
+      - "9115:9115"
+
+    volumes:
+      - ../prometheus/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=blackbox-exporter"
+      - "com.monitoring.description=HTTP/TCP/ICMP endpoint monitoring"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9115/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # MYSQL EXPORTER - MySQL Database Metrics
+  # ==========================================
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: mysql-exporter
+    hostname: mysql-exporter
+    restart: unless-stopped
+
+    command:
+      - '--collect.info_schema.tables'
+      - '--collect.info_schema.innodb_metrics'
+      - '--collect.global_status'
+      - '--collect.global_variables'
+      - '--collect.slave_status'
+      - '--collect.info_schema.processlist'
+      - '--collect.perf_schema.tableiowaits'
+      - '--collect.perf_schema.tablelocks'
+
+    ports:
+      - "9104:9104"
+
+    environment:
+      - DATA_SOURCE_NAME=${MYSQL_EXPORTER_DSN:-root:password@(mysql:3306)/}
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=mysql-exporter"
+      - "com.monitoring.description=MySQL database metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9104/metrics" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # POSTGRES EXPORTER - PostgreSQL Metrics
+  # ==========================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter
+    hostname: postgres-exporter
+    restart: unless-stopped
+
+    ports:
+      - "9187:9187"
+
+    environment:
+      - DATA_SOURCE_NAME=${POSTGRES_EXPORTER_DSN:-postgresql://postgres:password@postgres:5432/postgres?sslmode=disable}
+      - PG_EXPORTER_EXTEND_QUERY_PATH=/etc/postgres_exporter/queries.yaml
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=postgres-exporter"
+      - "com.monitoring.description=PostgreSQL database metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9187/metrics" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # REDIS EXPORTER - Redis Metrics
+  # ==========================================
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: redis-exporter
+    hostname: redis-exporter
+    restart: unless-stopped
+
+    command:
+      - '--redis.addr=redis:6379'
+      - '--redis.password=${REDIS_PASSWORD:-}'
+
+    ports:
+      - "9121:9121"
+
+    environment:
+      - REDIS_ADDR=${REDIS_ADDR:-redis:6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=redis-exporter"
+      - "com.monitoring.description=Redis cache metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9121/metrics" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # MONGODB EXPORTER - MongoDB Metrics
+  # ==========================================
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.40
+    container_name: mongodb-exporter
+    hostname: mongodb-exporter
+    restart: unless-stopped
+
+    command:
+      - '--mongodb.uri=${MONGODB_URI:-mongodb://mongodb:27017}'
+      - '--collect-all'
+
+    ports:
+      - "9216:9216"
+
+    environment:
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongodb:27017}
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=mongodb-exporter"
+      - "com.monitoring.description=MongoDB database metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9216/metrics" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # NGINX EXPORTER - Nginx Web Server Metrics
+  # ==========================================
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.1.0
+    container_name: nginx-exporter
+    hostname: nginx-exporter
+    restart: unless-stopped
+
+    command:
+      - '-nginx.scrape-uri=${NGINX_SCRAPE_URI:-http://nginx:8080/stub_status}'
+
+    ports:
+      - "9113:9113"
+
+    environment:
+      - SCRAPE_URI=${NGINX_SCRAPE_URI:-http://nginx:8080/stub_status}
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=nginx-exporter"
+      - "com.monitoring.description=Nginx web server metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9113/metrics" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # CADVISOR - Container Metrics
+  # ==========================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: cadvisor
+    hostname: cadvisor
+    restart: unless-stopped
+
+    privileged: true
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=cadvisor"
+      - "com.monitoring.description=Container resource usage metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # RABBITMQ EXPORTER - RabbitMQ Metrics
+  # ==========================================
+  rabbitmq-exporter:
+    image: kbudde/rabbitmq-exporter:v1.0.0-RC19
+    container_name: rabbitmq-exporter
+    hostname: rabbitmq-exporter
+    restart: unless-stopped
+
+    ports:
+      - "9419:9419"
+
+    environment:
+      - RABBIT_URL=${RABBITMQ_URL:-http://rabbitmq:15672}
+      - RABBIT_USER=${RABBITMQ_USER:-guest}
+      - RABBIT_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - PUBLISH_PORT=9419
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=rabbitmq-exporter"
+      - "com.monitoring.description=RabbitMQ message queue metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9419/metrics" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # ELASTICSEARCH EXPORTER - Elasticsearch Metrics
+  # ==========================================
+  elasticsearch-exporter:
+    image: prometheuscommunity/elasticsearch-exporter:v1.7.0
+    container_name: elasticsearch-exporter
+    hostname: elasticsearch-exporter
+    restart: unless-stopped
+
+    command:
+      - '--es.uri=${ELASTICSEARCH_URI:-http://elasticsearch:9200}'
+      - '--es.all'
+      - '--es.indices'
+      - '--es.shards'
+
+    ports:
+      - "9114:9114"
+
+    environment:
+      - ES_URI=${ELASTICSEARCH_URI:-http://elasticsearch:9200}
+
+    networks:
+      - monitoring
+
+    labels:
+      - "com.monitoring.service=elasticsearch-exporter"
+      - "com.monitoring.description=Elasticsearch search engine metrics"
+
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9114/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ==========================================
+# NETWORKS
+# ==========================================
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ==========================================
+# VOLUMES - Persistent Data Storage
+# ==========================================
+volumes:
+  prometheus_data:
+    driver: local
+    labels:
+      - "com.monitoring.volume=prometheus-data"
+      - "com.monitoring.description=Prometheus time-series database"
+
+  alertmanager_data:
+    driver: local
+    labels:
+      - "com.monitoring.volume=alertmanager-data"
+      - "com.monitoring.description=Alertmanager state and silences"
+
+# ==========================================
+# USAGE INSTRUCTIONS
+# ==========================================
+# 1. Copy .env.example to .env and configure
+# 2. Start services: docker-compose up -d
+# 3. Check status: docker-compose ps
+# 4. View logs: docker-compose logs -f [service]
+# 5. Stop services: docker-compose down
+# 6. Remove data: docker-compose down -v
+# ==========================================

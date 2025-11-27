@@ -1,0 +1,333 @@
+# ============================================
+# PROMETHEUS CONFIGURATION
+# ============================================
+# This file defines:
+# - Global settings
+# - Alertmanager endpoints
+# - Scrape configurations
+# - Alert rule files
+# ============================================
+
+# ==========================================
+# GLOBAL CONFIGURATION
+# ==========================================
+global:
+  # How frequently to scrape targets by default
+  scrape_interval: 15s
+  
+  # How frequently to evaluate rules
+  evaluation_interval: 15s
+  
+  # Timeout for scraping targets
+  scrape_timeout: 10s
+  
+  # Labels to add to all time series and alerts
+  external_labels:
+    cluster: 'production'
+    environment: 'prod'
+    region: 'us-east-1'
+    monitor: 'prometheus-main'
+
+# ==========================================
+# ALERTMANAGER CONFIGURATION
+# ==========================================
+# Alertmanager instances to send alerts to
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+      
+      # Timeout for sending alerts
+      timeout: 10s
+      
+      # API version (v1 or v2)
+      api_version: v2
+      
+      # Optional: Path prefix for Alertmanager
+      # path_prefix: /alertmanager
+
+# ==========================================
+# RULE FILES
+# ==========================================
+# Load alert rules from these files
+rule_files:
+  - '/etc/prometheus/rules/node_alerts.yml'
+  - '/etc/prometheus/rules/application_alerts.yml'
+  - '/etc/prometheus/rules/database_alerts.yml'
+  - '/etc/prometheus/rules/webserver_container_alerts.yml'
+  - '/etc/prometheus/rules/messaging_search_alerts.yml'
+  - '/etc/prometheus/rules/custom_alerts.yml'
+
+# ==========================================
+# SCRAPE CONFIGURATIONS
+# ==========================================
+scrape_configs:
+  
+  # ------------------------------------------
+  # 1. PROMETHEUS SELF-MONITORING
+  # ------------------------------------------
+  # Monitor Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          tier: 'monitoring'
+    
+    # Scrape more frequently for self-monitoring
+    scrape_interval: 10s
+    scrape_timeout: 5s
+  
+  # ------------------------------------------
+  # 2. ALERTMANAGER MONITORING
+  # ------------------------------------------
+  # Monitor Alertmanager instances
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels:
+          service: 'alertmanager'
+          tier: 'monitoring'
+    
+    scrape_interval: 15s
+  
+  # ------------------------------------------
+  # 3. NODE EXPORTER - System Metrics
+  # ------------------------------------------
+  # Collect system-level metrics (CPU, memory, disk, network)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          tier: 'infrastructure'
+          instance_type: 'docker-host'
+    
+    scrape_interval: 15s
+    
+    # Relabel instance to hostname
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(:[0-9]+)?'
+        replacement: '${1}'
+  
+  # ------------------------------------------
+  # 4. BLACKBOX EXPORTER - Endpoint Monitoring
+  # ------------------------------------------
+  # Monitor HTTP endpoints
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]  # Use HTTP 2xx module from blackbox.yml
+    
+    static_configs:
+      - targets:
+          - http://prometheus:9090/-/healthy
+          - http://alertmanager:9093/-/healthy
+          - https://www.google.com
+          - https://www.github.com
+        labels:
+          probe_type: 'http'
+    
+    relabel_configs:
+      # Save target URL to __param_target
+      - source_labels: [__address__]
+        target_label: __param_target
+      
+      # Set blackbox exporter address
+      - source_labels: [__param_target]
+        target_label: instance
+      
+      # Point to blackbox exporter
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+  
+  # Monitor TCP endpoints
+  - job_name: 'blackbox-tcp'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    
+    static_configs:
+      - targets:
+          - prometheus:9090
+          - alertmanager:9093
+        labels:
+          probe_type: 'tcp'
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+  
+  # ------------------------------------------
+  # 5. FILE-BASED SERVICE DISCOVERY
+  # ------------------------------------------
+  # Dynamically discover targets from JSON files
+  - job_name: 'file-discovery'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/targets/*.json'
+        refresh_interval: 30s
+    
+    relabel_configs:
+      # Use job label from file
+      - source_labels: [job]
+        target_label: job
+        replacement: '${1}'
+
+  # ------------------------------------------
+  # 6. MYSQL EXPORTER - Database Metrics
+  # ------------------------------------------
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql-exporter:9104']
+        labels:
+          service: 'mysql'
+          tier: 'database'
+          db_type: 'mysql'
+    
+    scrape_interval: 30s
+
+  # ------------------------------------------
+  # 7. POSTGRESQL EXPORTER - Database Metrics
+  # ------------------------------------------
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+          tier: 'database'
+          db_type: 'postgres'
+    
+    scrape_interval: 30s
+
+  # ------------------------------------------
+  # 8. REDIS EXPORTER - Cache Metrics
+  # ------------------------------------------
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          tier: 'cache'
+          db_type: 'redis'
+    
+    scrape_interval: 15s
+
+  # ------------------------------------------
+  # 9. MONGODB EXPORTER - Database Metrics
+  # ------------------------------------------
+  - job_name: 'mongodb'
+    static_configs:
+      - targets: ['mongodb-exporter:9216']
+        labels:
+          service: 'mongodb'
+          tier: 'database'
+          db_type: 'mongodb'
+    
+    scrape_interval: 30s
+
+  # ------------------------------------------
+  # 10. NGINX EXPORTER - Web Server Metrics
+  # ------------------------------------------
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+        labels:
+          service: 'nginx'
+          tier: 'web-server'
+    
+    scrape_interval: 15s
+
+  # ------------------------------------------
+  # 11. CADVISOR - Container Metrics
+  # ------------------------------------------
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+          tier: 'infrastructure'
+    
+    scrape_interval: 15s
+    
+    # Relabel to get container names
+    metric_relabel_configs:
+      - source_labels: [container_label_com_docker_compose_service]
+        target_label: container_service
+
+  # ------------------------------------------
+  # 12. RABBITMQ EXPORTER - Message Queue Metrics
+  # ------------------------------------------
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq-exporter:9419']
+        labels:
+          service: 'rabbitmq'
+          tier: 'messaging'
+    
+    scrape_interval: 30s
+
+  # ------------------------------------------
+  # 13. ELASTICSEARCH EXPORTER - Search Engine Metrics
+  # ------------------------------------------
+  - job_name: 'elasticsearch'
+    static_configs:
+      - targets: ['elasticsearch-exporter:9114']
+        labels:
+          service: 'elasticsearch'
+          tier: 'search'
+    
+    scrape_interval: 30s
+
+# ==========================================
+# REMOTE WRITE (OPTIONAL)
+# ==========================================
+# Send metrics to remote storage (e.g., Thanos, Cortex, Mimir)
+# remote_write:
+#   - url: "http://remote-storage:9009/api/v1/push"
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 50
+#       min_shards: 1
+#       max_samples_per_send: 5000
+#       batch_send_deadline: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms
+
+# ==========================================
+# REMOTE READ (OPTIONAL)
+# ==========================================
+# Read metrics from remote storage
+# remote_read:
+#   - url: "http://remote-storage:9009/api/v1/read"
+#     read_recent: true
+
+# ==========================================
+# STORAGE CONFIGURATION
+# ==========================================
+# Configured via command-line flags in docker-compose.yml:
+# --storage.tsdb.retention.time=30d
+# --storage.tsdb.retention.size=10GB
+# --storage.tsdb.path=/prometheus
+
+# ==========================================
+# USAGE NOTES
+# ==========================================
+# 1. Reload config: docker-compose exec prometheus kill -HUP 1
+#    OR: curl -X POST http://localhost:9090/-/reload
+# 
+# 2. Validate config: promtool check config prometheus.yml
+# 
+# 3. Check targets: http://localhost:9090/targets
+# 
+# 4. Check rules: http://localhost:9090/rules
+# 
+# 5. Query metrics: http://localhost:9090/graph
+# ==========================================

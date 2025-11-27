@@ -1,0 +1,16 @@
+---
+# ============================================================================
+# Docker Role - Default Variables
+# ============================================================================
+
+# Docker version (leave empty for latest)
+docker_version: ""
+
+# Docker daemon configuration
+docker_log_driver: json-file
+docker_log_max_size: 10m
+docker_log_max_file: 3
+docker_storage_driver: overlay2
+
+# Docker Compose version
+docker_compose_version: "2.23.0"

@@ -1,0 +1,17 @@
+---
+# ============================================================================
+# Kubernetes Tools Role - Default Variables
+# ============================================================================
+
+# kubectl version
+kubectl_version: v1.28.0
+
+# Install kubeadm and kubelet (set to true for K8s cluster nodes)
+install_kubeadm: false
+
+# Helm repositories to add
+helm_repos:
+  - name: stable
+    url: https://charts.helm.sh/stable
+  - name: bitnami
+    url: https://charts.bitnami.com/bitnami

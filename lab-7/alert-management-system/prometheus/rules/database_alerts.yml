@@ -1,0 +1,420 @@
+# ============================================
+# DATABASE ALERT RULES
+# ============================================
+# Alerts for MySQL, PostgreSQL, Redis, MongoDB
+# ============================================
+
+groups:
+  # ==========================================
+  # MYSQL ALERTS
+  # ==========================================
+  - name: mysql_alerts
+    interval: 30s
+    rules:
+      
+      # MySQL Down
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+          team: database
+          db_type: mysql
+        annotations:
+          summary: "MySQL database is down on {{ $labels.instance }}"
+          description: |
+            MySQL database on {{ $labels.instance }} is not responding.
+            This will cause application failures!
+          runbook_url: "https://runbooks.example.com/mysql-down"
+      
+      # High MySQL Connections
+      - alert: MySQLHighConnections
+        expr: |
+          (mysql_global_status_threads_connected / mysql_global_variables_max_connections) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mysql
+        annotations:
+          summary: "High MySQL connections on {{ $labels.instance }}"
+          description: |
+            MySQL connection usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+            Current: {{ with query "mysql_global_status_threads_connected" }}{{ . | first | value }}{{ end }}
+            Max: {{ with query "mysql_global_variables_max_connections" }}{{ . | first | value }}{{ end }}
+      
+      # MySQL Slow Queries
+      - alert: MySQLSlowQueries
+        expr: rate(mysql_global_status_slow_queries[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mysql
+        annotations:
+          summary: "High rate of slow queries on {{ $labels.instance }}"
+          description: |
+            MySQL is experiencing {{ $value | humanize }} slow queries/sec on {{ $labels.instance }}.
+            Review query performance and indexes.
+      
+      # MySQL Replication Lag
+      - alert: MySQLReplicationLag
+        expr: mysql_slave_status_seconds_behind_master > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mysql
+        annotations:
+          summary: "MySQL replication lag on {{ $labels.instance }}"
+          description: |
+            MySQL replica is {{ $value }} seconds behind master on {{ $labels.instance }}.
+      
+      # MySQL Replication Stopped
+      - alert: MySQLReplicationStopped
+        expr: mysql_slave_status_slave_sql_running == 0 or mysql_slave_status_slave_io_running == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+          team: database
+          db_type: mysql
+        annotations:
+          summary: "MySQL replication stopped on {{ $labels.instance }}"
+          description: |
+            MySQL replication has stopped on {{ $labels.instance }}.
+            Data is not being replicated!
+      
+      # MySQL High Query Rate
+      - alert: MySQLHighQueryRate
+        expr: rate(mysql_global_status_queries[5m]) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mysql
+        annotations:
+          summary: "High query rate on {{ $labels.instance }}"
+          description: |
+            MySQL is processing {{ $value | humanize }} queries/sec on {{ $labels.instance }}.
+      
+      # MySQL InnoDB Buffer Pool Efficiency
+      - alert: MySQLLowBufferPoolEfficiency
+        expr: |
+          (rate(mysql_global_status_innodb_buffer_pool_read_requests[5m]) - 
+           rate(mysql_global_status_innodb_buffer_pool_reads[5m])) / 
+          rate(mysql_global_status_innodb_buffer_pool_read_requests[5m]) < 0.9
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mysql
+        annotations:
+          summary: "Low InnoDB buffer pool efficiency on {{ $labels.instance }}"
+          description: |
+            InnoDB buffer pool hit rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}.
+            Consider increasing innodb_buffer_pool_size.
+
+  # ==========================================
+  # POSTGRESQL ALERTS
+  # ==========================================
+  - name: postgresql_alerts
+    interval: 30s
+    rules:
+      
+      # PostgreSQL Down
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+          team: database
+          db_type: postgres
+        annotations:
+          summary: "PostgreSQL database is down on {{ $labels.instance }}"
+          description: |
+            PostgreSQL database on {{ $labels.instance }} is not responding.
+          runbook_url: "https://runbooks.example.com/postgresql-down"
+      
+      # PostgreSQL High Connections
+      - alert: PostgreSQLHighConnections
+        expr: |
+          sum(pg_stat_database_numbackends) by (instance) / 
+          pg_settings_max_connections * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: postgres
+        annotations:
+          summary: "High PostgreSQL connections on {{ $labels.instance }}"
+          description: |
+            PostgreSQL connection usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+      
+      # PostgreSQL Replication Lag
+      - alert: PostgreSQLReplicationLag
+        expr: |
+          pg_replication_lag > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: postgres
+        annotations:
+          summary: "PostgreSQL replication lag on {{ $labels.instance }}"
+          description: |
+            PostgreSQL replica is {{ $value }} seconds behind primary on {{ $labels.instance }}.
+      
+      # PostgreSQL Dead Tuples
+      - alert: PostgreSQLHighDeadTuples
+        expr: |
+          (pg_stat_user_tables_n_dead_tup / 
+           (pg_stat_user_tables_n_live_tup + pg_stat_user_tables_n_dead_tup)) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: postgres
+        annotations:
+          summary: "High dead tuples in {{ $labels.datname }}.{{ $labels.relname }}"
+          description: |
+            Table {{ $labels.relname }} has {{ $value | humanizePercentage }} dead tuples.
+            Consider running VACUUM.
+      
+      # PostgreSQL Long Running Queries
+      - alert: PostgreSQLLongRunningQueries
+        expr: |
+          pg_stat_activity_max_tx_duration > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: postgres
+        annotations:
+          summary: "Long running query on {{ $labels.instance }}"
+          description: |
+            Query has been running for {{ $value }} seconds on {{ $labels.instance }}.
+      
+      # PostgreSQL Too Many Locks
+      - alert: PostgreSQLTooManyLocks
+        expr: |
+          sum(pg_locks_count) by (instance, datname) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: postgres
+        annotations:
+          summary: "Too many locks on {{ $labels.datname }}"
+          description: |
+            Database {{ $labels.datname }} has {{ $value }} locks on {{ $labels.instance }}.
+
+  # ==========================================
+  # REDIS ALERTS
+  # ==========================================
+  - name: redis_alerts
+    interval: 30s
+    rules:
+      
+      # Redis Down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+          team: backend
+          db_type: redis
+        annotations:
+          summary: "Redis is down on {{ $labels.instance }}"
+          description: |
+            Redis cache on {{ $labels.instance }} is not responding.
+            This may cause application slowdowns!
+          runbook_url: "https://runbooks.example.com/redis-down"
+      
+      # Redis High Memory Usage
+      - alert: RedisHighMemoryUsage
+        expr: |
+          (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+          team: backend
+          db_type: redis
+        annotations:
+          summary: "High Redis memory usage on {{ $labels.instance }}"
+          description: |
+            Redis memory usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+            Used: {{ with query "redis_memory_used_bytes" }}{{ . | first | value | humanize1024 }}B{{ end }}
+            Max: {{ with query "redis_memory_max_bytes" }}{{ . | first | value | humanize1024 }}B{{ end }}
+      
+      # Redis High Fragmentation
+      - alert: RedisHighFragmentation
+        expr: redis_mem_fragmentation_ratio > 1.5
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+          team: backend
+          db_type: redis
+        annotations:
+          summary: "High Redis memory fragmentation on {{ $labels.instance }}"
+          description: |
+            Redis memory fragmentation ratio is {{ $value }} on {{ $labels.instance }}.
+            Consider restarting Redis during maintenance window.
+      
+      # Redis Rejected Connections
+      - alert: RedisRejectedConnections
+        expr: rate(redis_rejected_connections_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: cache
+          team: backend
+          db_type: redis
+        annotations:
+          summary: "Redis rejecting connections on {{ $labels.instance }}"
+          description: |
+            Redis is rejecting {{ $value }} connections/sec on {{ $labels.instance }}.
+            Check maxclients setting.
+      
+      # Redis Replication Broken
+      - alert: RedisReplicationBroken
+        expr: redis_connected_slaves == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: cache
+          team: backend
+          db_type: redis
+        annotations:
+          summary: "Redis replication broken on {{ $labels.instance }}"
+          description: |
+            Redis master has no connected slaves on {{ $labels.instance }}.
+      
+      # Redis High Eviction Rate
+      - alert: RedisHighEvictionRate
+        expr: rate(redis_evicted_keys_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+          team: backend
+          db_type: redis
+        annotations:
+          summary: "High Redis eviction rate on {{ $labels.instance }}"
+          description: |
+            Redis is evicting {{ $value }} keys/sec on {{ $labels.instance }}.
+            Consider increasing maxmemory.
+
+  # ==========================================
+  # MONGODB ALERTS
+  # ==========================================
+  - name: mongodb_alerts
+    interval: 30s
+    rules:
+      
+      # MongoDB Down
+      - alert: MongoDBDown
+        expr: mongodb_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+          team: database
+          db_type: mongodb
+        annotations:
+          summary: "MongoDB is down on {{ $labels.instance }}"
+          description: |
+            MongoDB database on {{ $labels.instance }} is not responding.
+          runbook_url: "https://runbooks.example.com/mongodb-down"
+      
+      # MongoDB High Connections
+      - alert: MongoDBHighConnections
+        expr: |
+          (mongodb_connections{state="current"} / mongodb_connections{state="available"}) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mongodb
+        annotations:
+          summary: "High MongoDB connections on {{ $labels.instance }}"
+          description: |
+            MongoDB connection usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+      
+      # MongoDB Replication Lag
+      - alert: MongoDBReplicationLag
+        expr: mongodb_replset_member_replication_lag > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mongodb
+        annotations:
+          summary: "MongoDB replication lag on {{ $labels.instance }}"
+          description: |
+            MongoDB replica is {{ $value }} seconds behind primary on {{ $labels.instance }}.
+      
+      # MongoDB Replication Headroom Low
+      - alert: MongoDBReplicationHeadroomLow
+        expr: |
+          (avg(mongodb_mongod_replset_oplog_head_timestamp - mongodb_mongod_replset_oplog_tail_timestamp) by (instance)) < 3600
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mongodb
+        annotations:
+          summary: "Low MongoDB replication headroom on {{ $labels.instance }}"
+          description: |
+            MongoDB oplog window is {{ $value | humanizeDuration }} on {{ $labels.instance }}.
+            Consider increasing oplog size.
+      
+      # MongoDB High Query Execution Time
+      - alert: MongoDBSlowQueries
+        expr: rate(mongodb_mongod_metrics_query_executor_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+          team: database
+          db_type: mongodb
+        annotations:
+          summary: "High query execution time on {{ $labels.instance }}"
+          description: |
+            MongoDB is experiencing high query execution times on {{ $labels.instance }}.
+
+# ==========================================
+# QUERY EXPLANATIONS
+# ==========================================
+# 
+# MySQL Connections:
+# (mysql_global_status_threads_connected / mysql_global_variables_max_connections) * 100
+# - Calculates percentage of used connections
+#
+# PostgreSQL Connections:
+# sum(pg_stat_database_numbackends) / pg_settings_max_connections * 100
+# - Sums all database connections and compares to max
+#
+# Redis Memory:
+# (redis_memory_used_bytes / redis_memory_max_bytes) * 100
+# - Calculates percentage of memory used
+#
+# ==========================================

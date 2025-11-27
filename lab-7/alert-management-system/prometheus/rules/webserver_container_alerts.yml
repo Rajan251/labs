@@ -1,0 +1,277 @@
+# ============================================
+# WEB SERVER & CONTAINER ALERT RULES
+# ============================================
+# Alerts for Nginx, cAdvisor (containers)
+# ============================================
+
+groups:
+  # ==========================================
+  # NGINX ALERTS
+  # ==========================================
+  - name: nginx_alerts
+    interval: 30s
+    rules:
+      
+      # Nginx Down
+      - alert: NginxDown
+        expr: nginx_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: web-server
+          team: infrastructure
+        annotations:
+          summary: "Nginx is down on {{ $labels.instance }}"
+          description: |
+            Nginx web server on {{ $labels.instance }} is not responding.
+            Web traffic cannot be served!
+          runbook_url: "https://runbooks.example.com/nginx-down"
+      
+      # Nginx High Connection Usage
+      - alert: NginxHighConnections
+        expr: |
+          (nginx_connections_active / nginx_connections_accepted) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: web-server
+          team: infrastructure
+        annotations:
+          summary: "High Nginx connection usage on {{ $labels.instance }}"
+          description: |
+            Nginx active connections are {{ $value | humanize }}% of accepted on {{ $labels.instance }}.
+      
+      # Nginx High Request Rate
+      - alert: NginxHighRequestRate
+        expr: rate(nginx_http_requests_total[5m]) > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: web-server
+          team: infrastructure
+        annotations:
+          summary: "High Nginx request rate on {{ $labels.instance }}"
+          description: |
+            Nginx is processing {{ $value | humanize }} requests/sec on {{ $labels.instance }}.
+      
+      # Nginx High 4xx Error Rate
+      - alert: NginxHigh4xxRate
+        expr: |
+          sum(rate(nginx_http_requests_total{status=~"4.."}[5m])) by (instance) /
+          sum(rate(nginx_http_requests_total[5m])) by (instance) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: web-server
+          team: application
+        annotations:
+          summary: "High Nginx 4xx error rate on {{ $labels.instance }}"
+          description: |
+            Nginx 4xx error rate is {{ $value | humanize }}% on {{ $labels.instance }}.
+      
+      # Nginx High 5xx Error Rate
+      - alert: NginxHigh5xxRate
+        expr: |
+          sum(rate(nginx_http_requests_total{status=~"5.."}[5m])) by (instance) /
+          sum(rate(nginx_http_requests_total[5m])) by (instance) * 100 > 1
+        for: 3m
+        labels:
+          severity: critical
+          component: web-server
+          team: infrastructure
+        annotations:
+          summary: "High Nginx 5xx error rate on {{ $labels.instance }}"
+          description: |
+            Nginx 5xx error rate is {{ $value | humanize }}% on {{ $labels.instance }}.
+            Backend servers may be failing!
+      
+      # Nginx Configuration Reload Failed
+      - alert: NginxConfigReloadFailed
+        expr: nginx_config_last_reload_successful == 0
+        for: 1m
+        labels:
+          severity: warning
+          component: web-server
+          team: infrastructure
+        annotations:
+          summary: "Nginx configuration reload failed on {{ $labels.instance }}"
+          description: |
+            Last Nginx configuration reload failed on {{ $labels.instance }}.
+            Check configuration syntax.
+
+  # ==========================================
+  # CONTAINER ALERTS (cAdvisor)
+  # ==========================================
+  - name: container_alerts
+    interval: 30s
+    rules:
+      
+      # Container High CPU Usage
+      - alert: ContainerHighCPU
+        expr: |
+          (sum(rate(container_cpu_usage_seconds_total{container!=""}[5m])) by (name, instance) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+          team: infrastructure
+        annotations:
+          summary: "High CPU usage in container {{ $labels.name }}"
+          description: |
+            Container {{ $labels.name }} on {{ $labels.instance }} is using {{ $value | humanize }}% CPU.
+      
+      # Container High Memory Usage
+      - alert: ContainerHighMemory
+        expr: |
+          (container_memory_usage_bytes{container!=""} / container_spec_memory_limit_bytes{container!=""}) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+          team: infrastructure
+        annotations:
+          summary: "High memory usage in container {{ $labels.name }}"
+          description: |
+            Container {{ $labels.name }} on {{ $labels.instance }} is using {{ $value | humanize }}% of memory limit.
+            Current: {{ with query "container_memory_usage_bytes" }}{{ . | first | value | humanize1024 }}B{{ end }}
+            Limit: {{ with query "container_spec_memory_limit_bytes" }}{{ . | first | value | humanize1024 }}B{{ end }}
+      
+      # Container Memory at Limit
+      - alert: ContainerMemoryAtLimit
+        expr: |
+          (container_memory_usage_bytes{container!=""} / container_spec_memory_limit_bytes{container!=""}) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: container
+          team: infrastructure
+        annotations:
+          summary: "Container {{ $labels.name }} at memory limit"
+          description: |
+            Container {{ $labels.name }} on {{ $labels.instance }} is at {{ $value | humanize }}% of memory limit.
+            Container may be OOM killed!
+      
+      # Container Restarting
+      - alert: ContainerRestarting
+        expr: rate(container_last_seen{container!=""}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+          team: infrastructure
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting"
+          description: |
+            Container {{ $labels.name }} on {{ $labels.instance }} is restarting frequently.
+            Check container logs for errors.
+      
+      # Container High Network Traffic
+      - alert: ContainerHighNetworkTraffic
+        expr: |
+          rate(container_network_receive_bytes_total{container!=""}[5m]) > 100 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: info
+          component: container
+          team: infrastructure
+        annotations:
+          summary: "High network traffic in container {{ $labels.name }}"
+          description: |
+            Container {{ $labels.name }} is receiving {{ $value | humanize }}B/s network traffic.
+      
+      # Container Filesystem Usage High
+      - alert: ContainerFilesystemUsageHigh
+        expr: |
+          (container_fs_usage_bytes{container!=""} / container_fs_limit_bytes{container!=""}) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+          team: infrastructure
+        annotations:
+          summary: "High filesystem usage in container {{ $labels.name }}"
+          description: |
+            Container {{ $labels.name }} filesystem is {{ $value | humanize }}% full.
+      
+      # Too Many Containers
+      - alert: TooManyContainers
+        expr: count(container_last_seen{container!=""}) by (instance) > 50
+        for: 10m
+        labels:
+          severity: warning
+          component: container
+          team: infrastructure
+        annotations:
+          summary: "Too many containers on {{ $labels.instance }}"
+          description: |
+            Host {{ $labels.instance }} is running {{ $value }} containers.
+            This may impact performance.
+
+  # ==========================================
+  # DOCKER ALERTS
+  # ==========================================
+  - name: docker_alerts
+    interval: 30s
+    rules:
+      
+      # Docker Daemon Down
+      - alert: DockerDaemonDown
+        expr: up{job="docker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: docker
+          team: infrastructure
+        annotations:
+          summary: "Docker daemon is down on {{ $labels.instance }}"
+          description: |
+            Docker daemon on {{ $labels.instance }} is not responding.
+            All containers on this host are affected!
+      
+      # Docker High CPU Usage
+      - alert: DockerHighCPU
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total[5m])) by (instance) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: docker
+          team: infrastructure
+        annotations:
+          summary: "High Docker CPU usage on {{ $labels.instance }}"
+          description: |
+            All Docker containers on {{ $labels.instance }} are using {{ $value | humanize }}% CPU.
+      
+      # Docker High Memory Usage
+      - alert: DockerHighMemory
+        expr: |
+          (sum(container_memory_usage_bytes) by (instance) / 
+           sum(machine_memory_bytes) by (instance)) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: docker
+          team: infrastructure
+        annotations:
+          summary: "High Docker memory usage on {{ $labels.instance }}"
+          description: |
+            All Docker containers on {{ $labels.instance }} are using {{ $value | humanize }}% of host memory.
+
+# ==========================================
+# QUERY EXPLANATIONS
+# ==========================================
+# 
+# Nginx 4xx Rate:
+# sum(rate(nginx_http_requests_total{status=~"4.."}[5m])) /
+# sum(rate(nginx_http_requests_total[5m])) * 100
+# - Calculates percentage of 4xx errors
+#
+# Container CPU:
+# sum(rate(container_cpu_usage_seconds_total[5m])) * 100
+# - Calculates CPU usage percentage for container
+#
+# Container Memory:
+# (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100
+# - Calculates percentage of memory limit used
+#
+# ==========================================

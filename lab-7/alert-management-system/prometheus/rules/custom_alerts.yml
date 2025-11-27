@@ -1,0 +1,103 @@
+# ============================================
+# CUSTOM ALERT RULES
+# ============================================
+# Add your custom alert rules here
+# This file is a template for organization-specific alerts
+# ============================================
+
+groups:
+  # ==========================================
+  # EXAMPLE: DATABASE ALERTS
+  # ==========================================
+  - name: database_alerts
+    interval: 30s
+    rules:
+      
+      # Example: High Database Connections
+      # Uncomment and modify for your database
+      # - alert: HighDatabaseConnections
+      #   expr: |
+      #     pg_stat_database_numbackends > 80
+      #   for: 5m
+      #   labels:
+      #     severity: warning
+      #     component: database
+      #     team: backend
+      #   annotations:
+      #     summary: "High database connections on {{ $labels.instance }}"
+      #     description: |
+      #       Database {{ $labels.datname }} has {{ $value }} active connections.
+      #       Max connections may be reached soon.
+
+  # ==========================================
+  # EXAMPLE: BUSINESS METRICS ALERTS
+  # ==========================================
+  - name: business_metrics_alerts
+    interval: 1m
+    rules:
+      
+      # Example: Low Order Rate
+      # Uncomment and modify for your metrics
+      # - alert: LowOrderRate
+      #   expr: |
+      #     rate(orders_total[5m]) < 10
+      #   for: 10m
+      #   labels:
+      #     severity: warning
+      #     component: business
+      #     team: product
+      #   annotations:
+      #     summary: "Low order rate detected"
+      #     description: |
+      #       Order rate is {{ $value }} orders/sec.
+      #       This is below the expected threshold of 10 orders/sec.
+
+  # ==========================================
+  # EXAMPLE: CONTAINER ALERTS
+  # ==========================================
+  - name: container_alerts
+    interval: 30s
+    rules:
+      
+      # Example: Container Restart
+      # Uncomment and modify if using cAdvisor
+      # - alert: ContainerRestart
+      #   expr: |
+      #     rate(container_last_seen[5m]) > 0
+      #   for: 2m
+      #   labels:
+      #     severity: warning
+      #     component: container
+      #     team: infrastructure
+      #   annotations:
+      #     summary: "Container {{ $labels.name }} restarted"
+      #     description: |
+      #       Container {{ $labels.name }} on {{ $labels.instance }} has restarted.
+
+# ==========================================
+# HOW TO ADD CUSTOM ALERTS
+# ==========================================
+# 
+# 1. Define the alert group and interval
+# 2. Write the PromQL expression
+# 3. Set appropriate labels (severity, component, team)
+# 4. Add clear annotations (summary, description)
+# 5. Test the alert before deploying
+#
+# Example template:
+#
+# - alert: YourAlertName
+#   expr: your_metric > threshold
+#   for: duration
+#   labels:
+#     severity: warning|critical
+#     component: your_component
+#     team: your_team
+#   annotations:
+#     summary: "Brief description"
+#     description: |
+#       Detailed description with context
+#       Current value: {{ $value }}
+#     runbook_url: "https://runbooks.example.com/your-alert"
+#
+# ==========================================

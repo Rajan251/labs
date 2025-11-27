@@ -1,0 +1,303 @@
+# ============================================
+# NODE EXPORTER ALERT RULES
+# ============================================
+# System-level alerts for infrastructure monitoring
+# Covers: CPU, Memory, Disk, Network, System Load
+# ============================================
+
+groups:
+  # ==========================================
+  # CPU ALERTS
+  # ==========================================
+  - name: cpu_alerts
+    interval: 30s
+    rules:
+      
+      # High CPU Usage (Warning)
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: cpu
+          team: infrastructure
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: |
+            CPU usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+            Current value: {{ $value | humanize }}%
+            Threshold: 80%
+            Duration: 5 minutes
+          runbook_url: "https://runbooks.example.com/cpu-high"
+          dashboard_url: "http://localhost:9090/graph?g0.expr=node_cpu_seconds_total"
+      
+      # Critical CPU Usage
+      - alert: CriticalCPUUsage
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: cpu
+          team: infrastructure
+        annotations:
+          summary: "CRITICAL: CPU usage on {{ $labels.instance }}"
+          description: |
+            CPU usage is critically high at {{ $value | humanize }}% on {{ $labels.instance }}.
+            Immediate action required!
+          runbook_url: "https://runbooks.example.com/cpu-critical"
+      
+      # High CPU I/O Wait
+      - alert: HighCPUIOWait
+        expr: |
+          avg by(instance) (rate(node_cpu_seconds_total{mode="iowait"}[5m])) * 100 > 20
+        for: 5m
+        labels:
+          severity: warning
+          component: cpu
+          team: infrastructure
+        annotations:
+          summary: "High CPU I/O wait on {{ $labels.instance }}"
+          description: |
+            CPU I/O wait is {{ $value | humanize }}% on {{ $labels.instance }}.
+            This may indicate disk performance issues.
+
+  # ==========================================
+  # MEMORY ALERTS
+  # ==========================================
+  - name: memory_alerts
+    interval: 30s
+    rules:
+      
+      # High Memory Usage (Warning)
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: memory
+          team: infrastructure
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: |
+            Memory usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+            Available: {{ with query "node_memory_MemAvailable_bytes{instance='$labels.instance'}" }}{{ . | first | value | humanize1024 }}B{{ end }}
+            Total: {{ with query "node_memory_MemTotal_bytes{instance='$labels.instance'}" }}{{ . | first | value | humanize1024 }}B{{ end }}
+          runbook_url: "https://runbooks.example.com/memory-high"
+      
+      # Critical Memory Usage
+      - alert: CriticalMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          component: memory
+          team: infrastructure
+        annotations:
+          summary: "CRITICAL: Memory usage on {{ $labels.instance }}"
+          description: |
+            Memory usage is critically high at {{ $value | humanize }}% on {{ $labels.instance }}.
+            System may start OOM killing processes!
+          runbook_url: "https://runbooks.example.com/memory-critical"
+      
+      # High Swap Usage
+      - alert: HighSwapUsage
+        expr: |
+          (1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)) * 100 > 50
+        for: 5m
+        labels:
+          severity: warning
+          component: memory
+          team: infrastructure
+        annotations:
+          summary: "High swap usage on {{ $labels.instance }}"
+          description: |
+            Swap usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+            This indicates memory pressure.
+
+  # ==========================================
+  # DISK ALERTS
+  # ==========================================
+  - name: disk_alerts
+    interval: 30s
+    rules:
+      
+      # Low Disk Space (Warning)
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / 
+           node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) * 100 < 20
+        for: 5m
+        labels:
+          severity: warning
+          component: disk
+          team: infrastructure
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: |
+            Disk space is {{ $value | humanize }}% available on {{ $labels.instance }}:{{ $labels.mountpoint }}.
+            Available: {{ with query "node_filesystem_avail_bytes{instance='$labels.instance',mountpoint='$labels.mountpoint'}" }}{{ . | first | value | humanize1024 }}B{{ end }}
+            Total: {{ with query "node_filesystem_size_bytes{instance='$labels.instance',mountpoint='$labels.mountpoint'}" }}{{ . | first | value | humanize1024 }}B{{ end }}
+          runbook_url: "https://runbooks.example.com/disk-space-low"
+      
+      # Critical Disk Space
+      - alert: CriticalDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / 
+           node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) * 100 < 10
+        for: 2m
+        labels:
+          severity: critical
+          component: disk
+          team: infrastructure
+        annotations:
+          summary: "CRITICAL: Disk space on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: |
+            Disk space is critically low at {{ $value | humanize }}% on {{ $labels.instance }}:{{ $labels.mountpoint }}.
+            Immediate cleanup required!
+          runbook_url: "https://runbooks.example.com/disk-space-critical"
+      
+      # High Disk I/O
+      - alert: HighDiskIO
+        expr: |
+          rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: disk
+          team: infrastructure
+        annotations:
+          summary: "High disk I/O on {{ $labels.instance }}"
+          description: |
+            Disk I/O utilization is {{ $value | humanizePercentage }} on {{ $labels.instance }}, device {{ $labels.device }}.
+      
+      # Disk Read Errors
+      - alert: DiskReadErrors
+        expr: |
+          rate(node_disk_read_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: disk
+          team: infrastructure
+        annotations:
+          summary: "Disk read errors on {{ $labels.instance }}"
+          description: |
+            Disk {{ $labels.device }} on {{ $labels.instance }} is experiencing read errors.
+            This may indicate hardware failure!
+
+  # ==========================================
+  # NETWORK ALERTS
+  # ==========================================
+  - name: network_alerts
+    interval: 30s
+    rules:
+      
+      # High Network Traffic
+      - alert: HighNetworkTraffic
+        expr: |
+          rate(node_network_receive_bytes_total{device!~"lo|veth.*|docker.*|br-.*"}[5m]) > 100 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+          team: infrastructure
+        annotations:
+          summary: "High network receive traffic on {{ $labels.instance }}"
+          description: |
+            Network receive traffic is {{ $value | humanize }}B/s on {{ $labels.instance }}, interface {{ $labels.device }}.
+      
+      # Network Errors
+      - alert: NetworkErrors
+        expr: |
+          rate(node_network_receive_errs_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          component: network
+          team: infrastructure
+        annotations:
+          summary: "Network errors on {{ $labels.instance }}"
+          description: |
+            Network interface {{ $labels.device }} on {{ $labels.instance }} is experiencing {{ $value }} errors/sec.
+
+  # ==========================================
+  # SYSTEM LOAD ALERTS
+  # ==========================================
+  - name: system_load_alerts
+    interval: 30s
+    rules:
+      
+      # High System Load
+      - alert: HighSystemLoad
+        expr: |
+          node_load15 / count(node_cpu_seconds_total{mode="idle"}) without(cpu, mode) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+          team: infrastructure
+        annotations:
+          summary: "High system load on {{ $labels.instance }}"
+          description: |
+            System load (15m avg) is {{ $value | humanize }} on {{ $labels.instance }}.
+            This is {{ $value | humanizePercentage }} of available CPU cores.
+
+  # ==========================================
+  # SYSTEM AVAILABILITY ALERTS
+  # ==========================================
+  - name: availability_alerts
+    interval: 30s
+    rules:
+      
+      # Instance Down
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: system
+          team: infrastructure
+        annotations:
+          summary: "Instance {{ $labels.instance }} is down"
+          description: |
+            Instance {{ $labels.instance }} (job: {{ $labels.job }}) has been down for more than 1 minute.
+          runbook_url: "https://runbooks.example.com/instance-down"
+      
+      # System Reboot
+      - alert: SystemReboot
+        expr: |
+          node_time_seconds - node_boot_time_seconds < 300
+        for: 1m
+        labels:
+          severity: warning
+          component: system
+          team: infrastructure
+        annotations:
+          summary: "System {{ $labels.instance }} recently rebooted"
+          description: |
+            System {{ $labels.instance }} rebooted {{ $value | humanizeDuration }} ago.
+
+# ==========================================
+# PROMQL QUERY EXPLANATIONS
+# ==========================================
+# 
+# CPU Usage:
+# 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+# - Takes idle CPU time, calculates rate over 5m
+# - Subtracts from 100 to get usage percentage
+#
+# Memory Usage:
+# (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+# - Calculates percentage of memory in use
+# - Uses MemAvailable (includes cache that can be freed)
+#
+# Disk Space:
+# (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100
+# - Calculates percentage of available disk space
+# - Filters out temporary filesystems
+#
+# ==========================================

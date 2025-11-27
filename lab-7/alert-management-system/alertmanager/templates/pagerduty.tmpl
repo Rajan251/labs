@@ -1,0 +1,16 @@
+{{ define "pagerduty.default.description" }}
+[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} - {{ .CommonLabels.cluster }}
+{{ end }}
+
+{{ define "pagerduty.default.details" }}
+{
+  "summary": "{{ .CommonAnnotations.summary }}",
+  "description": "{{ .CommonAnnotations.description }}",
+  "cluster": "{{ .CommonLabels.cluster }}",
+  "environment": "{{ .CommonLabels.environment }}",
+  "severity": "{{ .CommonLabels.severity }}",
+  "firing_count": "{{ .Alerts.Firing | len }}",
+  "resolved_count": "{{ .Alerts.Resolved | len }}",
+  "alertname": "{{ .GroupLabels.alertname }}"
+}
+{{ end }}

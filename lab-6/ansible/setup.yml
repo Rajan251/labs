@@ -1,0 +1,133 @@
+---
+# ============================================================================
+# Main Ansible Playbook - Server Configuration
+# ============================================================================
+# This playbook configures all servers provisioned by Terraform
+# ============================================================================
+
+- name: Configure all servers with common setup
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Display host information
+      debug:
+        msg: "Configuring {{ inventory_hostname }} ({{ ansible_host }})"
+    
+    - name: Wait for system to be ready
+      wait_for_connection:
+        timeout: 300
+        delay: 5
+  
+  roles:
+    - common
+  
+  post_tasks:
+    - name: Verify common configuration
+      debug:
+        msg: "Common configuration completed on {{ inventory_hostname }}"
+
+# ============================================================================
+# Web Server Configuration
+# ============================================================================
+
+- name: Configure web servers
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+  
+  roles:
+    - nginx
+  
+  post_tasks:
+    - name: Verify Nginx is running
+      service:
+        name: nginx
+        state: started
+      register: nginx_status
+    
+    - name: Display Nginx status
+      debug:
+        msg: "Nginx is {{ nginx_status.state }} on {{ inventory_hostname }}"
+
+# ============================================================================
+# Application Server Configuration
+# ============================================================================
+
+- name: Configure application servers
+  hosts: appservers
+  become: yes
+  gather_facts: yes
+  
+  roles:
+    - docker
+    - k8s-tools
+  
+  post_tasks:
+    - name: Verify Docker is running
+      service:
+        name: docker
+        state: started
+      register: docker_status
+    
+    - name: Display Docker status
+      debug:
+        msg: "Docker is {{ docker_status.state }} on {{ inventory_hostname }}"
+    
+    - name: Verify kubectl installation
+      command: kubectl version --client --short
+      register: kubectl_version
+      changed_when: false
+    
+    - name: Display kubectl version
+      debug:
+        msg: "{{ kubectl_version.stdout }}"
+
+# ============================================================================
+# Final Verification
+# ============================================================================
+
+- name: Final verification and summary
+  hosts: all
+  become: yes
+  gather_facts: no
+  
+  tasks:
+    - name: Check system uptime
+      command: uptime
+      register: uptime_result
+      changed_when: false
+    
+    - name: Display uptime
+      debug:
+        msg: "{{ inventory_hostname }}: {{ uptime_result.stdout }}"
+    
+    - name: Check disk usage
+      shell: df -h / | tail -1
+      register: disk_usage
+      changed_when: false
+    
+    - name: Display disk usage
+      debug:
+        msg: "{{ inventory_hostname }}: {{ disk_usage.stdout }}"
+    
+    - name: Summary message
+      debug:
+        msg: |
+          ✅ Configuration completed successfully!
+          
+          Host: {{ inventory_hostname }}
+          IP: {{ ansible_host }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Kernel: {{ ansible_kernel }}
+          
+          Services configured:
+          {% if 'webservers' in group_names %}
+          - Nginx web server
+          {% endif %}
+          {% if 'appservers' in group_names %}
+          - Docker container runtime
+          - Kubernetes tools (kubectl, helm)
+          {% endif %}
+          - Common system tools and configuration

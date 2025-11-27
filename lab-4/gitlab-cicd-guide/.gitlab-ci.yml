@@ -1,0 +1,567 @@
+# ============================================================================
+# GitLab CI/CD Pipeline - Production Ready
+# ============================================================================
+# This pipeline implements a complete CI/CD workflow with:
+# - Multi-stage build, test, and deployment
+# - Integrated security scanning (SAST, Dependency, Container, DAST)
+# - Docker image build and push to GitLab Container Registry
+# - Kubernetes deployments with review apps, staging, and production
+# - Optimized with caching, parallel jobs, and DAG (needs)
+# ============================================================================
+
+# Default Docker image for jobs (can be overridden per job)
+image: alpine:latest
+
+# Global variables available to all jobs
+variables:
+  # Docker configuration
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_BUILDKIT: "1"
+  
+  # Image tagging
+  IMAGE_TAG_COMMIT: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  IMAGE_TAG_BRANCH: "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+  IMAGE_TAG_LATEST: "$CI_REGISTRY_IMAGE:latest"
+  
+  # Kubernetes configuration
+  KUBE_NAMESPACE: "$CI_PROJECT_NAME-$CI_ENVIRONMENT_SLUG"
+  
+  # Application configuration
+  APP_NAME: "$CI_PROJECT_NAME"
+
+# Define pipeline stages (executed in order)
+stages:
+  - prepare      # Dependency caching and setup
+  - build        # Compile/build application
+  - test         # Run tests (unit, integration)
+  - security     # Security scanning
+  - image-build  # Build Docker image
+  - push         # Push image to registry
+  - deploy-review   # Deploy review apps for MRs
+  - deploy-staging  # Deploy to staging environment
+  - deploy-prod     # Deploy to production
+  - cleanup      # Cleanup temporary resources
+
+# ============================================================================
+# STAGE: PREPARE
+# Cache dependencies to speed up subsequent jobs
+# ============================================================================
+
+cache-dependencies:
+  stage: prepare
+  image: node:18-alpine
+  script:
+    - echo "Installing dependencies..."
+    - npm ci --cache .npm --prefer-offline
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-npm
+    paths:
+      - node_modules/
+      - .npm/
+  artifacts:
+    paths:
+      - node_modules/
+    expire_in: 1 hour
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_TAG'
+
+# ============================================================================
+# STAGE: BUILD
+# Compile application code
+# ============================================================================
+
+build-app:
+  stage: build
+  image: node:18-alpine
+  needs: [cache-dependencies]
+  before_script:
+    - echo "Build started at $(date)"
+  script:
+    - echo "Building application..."
+    - npm run build
+    - echo "Build completed successfully"
+  after_script:
+    - ls -lah dist/ || echo "No dist directory"
+  artifacts:
+    paths:
+      - dist/
+      - build/
+    expire_in: 1 day
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-npm
+    paths:
+      - node_modules/
+    policy: pull  # Only download cache, don't upload
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_TAG'
+
+# ============================================================================
+# STAGE: TEST
+# Run unit and integration tests in parallel
+# ============================================================================
+
+unit-test:
+  stage: test
+  image: node:18-alpine
+  needs: [build-app]
+  script:
+    - echo "Running unit tests..."
+    - npm run test:unit -- --coverage
+  coverage: '/Lines\s*:\s*(\d+\.\d+)%/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+    paths:
+      - coverage/
+    expire_in: 30 days
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-npm
+    paths:
+      - node_modules/
+    policy: pull
+
+integration-test:
+  stage: test
+  image: node:18-alpine
+  services:
+    - name: postgres:15-alpine
+      alias: postgres
+    - name: redis:7-alpine
+      alias: redis
+  variables:
+    POSTGRES_DB: testdb
+    POSTGRES_USER: testuser
+    POSTGRES_PASSWORD: testpass
+    POSTGRES_HOST_AUTH_METHOD: trust
+    REDIS_HOST: redis
+    DATABASE_URL: "postgresql://testuser:testpass@postgres:5432/testdb"
+  needs: [build-app]
+  before_script:
+    - apk add --no-cache postgresql-client
+    - until pg_isready -h postgres -U testuser; do sleep 1; done
+  script:
+    - echo "Running integration tests..."
+    - npm run test:integration
+  artifacts:
+    when: on_failure
+    paths:
+      - logs/
+    expire_in: 1 week
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-npm
+    paths:
+      - node_modules/
+    policy: pull
+  allow_failure: false
+
+lint:
+  stage: test
+  image: node:18-alpine
+  needs: [cache-dependencies]
+  script:
+    - echo "Running linters..."
+    - npm run lint
+    - npm run format:check
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-npm
+    paths:
+      - node_modules/
+    policy: pull
+  allow_failure: false
+
+# ============================================================================
+# STAGE: SECURITY
+# Integrated security scanning using GitLab templates
+# ============================================================================
+
+# Include GitLab's security scanning templates
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+# Customize SAST job
+sast:
+  stage: security
+  variables:
+    SAST_EXCLUDED_PATHS: "spec, test, tests, tmp, node_modules, dist, build"
+    SAST_EXCLUDED_ANALYZERS: ""
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+  allow_failure: false  # Block pipeline on critical vulnerabilities
+
+# Customize Dependency Scanning
+dependency_scanning:
+  stage: security
+  variables:
+    DS_EXCLUDED_PATHS: "spec, test, tests, tmp"
+  artifacts:
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+  allow_failure: false
+
+# Secret Detection
+secret_detection:
+  stage: security
+  artifacts:
+    reports:
+      secret_detection: gl-secret-detection-report.json
+  allow_failure: false
+
+# ============================================================================
+# STAGE: IMAGE-BUILD
+# Build Docker container image
+# ============================================================================
+
+docker-build:
+  stage: image-build
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  needs:
+    - job: build-app
+      artifacts: true
+    - job: unit-test
+      artifacts: false
+  before_script:
+    - echo "Docker version:"
+    - docker version
+    - echo "Logging into GitLab Container Registry..."
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - echo "Building Docker image..."
+    - |
+      docker build \
+        --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+        --build-arg VCS_REF=$CI_COMMIT_SHORT_SHA \
+        --build-arg VERSION=${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA} \
+        --cache-from $IMAGE_TAG_LATEST \
+        --tag $IMAGE_TAG_COMMIT \
+        --tag $IMAGE_TAG_BRANCH \
+        .
+    
+    - echo "Pushing images to registry..."
+    - docker push $IMAGE_TAG_COMMIT
+    - docker push $IMAGE_TAG_BRANCH
+    
+    # Tag and push as latest on main branch
+    - |
+      if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+        docker tag $IMAGE_TAG_COMMIT $IMAGE_TAG_LATEST
+        docker push $IMAGE_TAG_LATEST
+      fi
+    
+    # Tag with semver on release tags
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag $IMAGE_TAG_COMMIT $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG
+        docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG
+      fi
+  after_script:
+    - docker images
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_TAG'
+
+# Alternative: Build with Kaniko (no Docker daemon required)
+docker-build-kaniko:
+  stage: image-build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.9.0-debug
+    entrypoint: [""]
+  needs:
+    - job: build-app
+      artifacts: true
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+        --context "${CI_PROJECT_DIR}"
+        --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+        --destination "${IMAGE_TAG_COMMIT}"
+        --destination "${IMAGE_TAG_BRANCH}"
+        --cache=true
+        --cache-ttl=24h
+        --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        --build-arg VCS_REF=$CI_COMMIT_SHORT_SHA
+  rules:
+    - when: manual  # Run manually as alternative to docker-build
+
+# Container Scanning
+include:
+  - template: Security/Container-Scanning.gitlab-ci.yml
+
+container_scanning:
+  stage: security
+  needs: [docker-build]
+  variables:
+    CS_IMAGE: "$IMAGE_TAG_COMMIT"
+    CS_SEVERITY_THRESHOLD: "high"
+  artifacts:
+    reports:
+      container_scanning: gl-container-scanning-report.json
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_TAG'
+
+# ============================================================================
+# STAGE: DEPLOY-REVIEW
+# Deploy ephemeral review apps for merge requests
+# ============================================================================
+
+deploy-review:
+  stage: deploy-review
+  image: bitnami/kubectl:latest
+  needs: [docker-build]
+  variables:
+    REVIEW_NAMESPACE: "review-$CI_COMMIT_REF_SLUG"
+  before_script:
+    - kubectl version --client
+  script:
+    - echo "Deploying review app to namespace $REVIEW_NAMESPACE..."
+    
+    # Create namespace
+    - kubectl create namespace $REVIEW_NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Deploy application
+    - |
+      cat <<EOF | kubectl apply -f -
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: $APP_NAME
+        namespace: $REVIEW_NAMESPACE
+        labels:
+          app: $APP_NAME
+          environment: review
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: $APP_NAME
+        template:
+          metadata:
+            labels:
+              app: $APP_NAME
+          spec:
+            containers:
+            - name: app
+              image: $IMAGE_TAG_COMMIT
+              ports:
+              - containerPort: 3000
+                name: http
+              env:
+              - name: ENVIRONMENT
+                value: review
+              - name: CI_COMMIT_SHA
+                value: $CI_COMMIT_SHORT_SHA
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "200m"
+              livenessProbe:
+                httpGet:
+                  path: /health
+                  port: 3000
+                initialDelaySeconds: 30
+                periodSeconds: 10
+              readinessProbe:
+                httpGet:
+                  path: /health
+                  port: 3000
+                initialDelaySeconds: 5
+                periodSeconds: 5
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: $APP_NAME
+        namespace: $REVIEW_NAMESPACE
+      spec:
+        selector:
+          app: $APP_NAME
+        ports:
+        - port: 80
+          targetPort: 3000
+          protocol: TCP
+      ---
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: $APP_NAME
+        namespace: $REVIEW_NAMESPACE
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+      spec:
+        ingressClassName: nginx
+        tls:
+        - hosts:
+          - $CI_COMMIT_REF_SLUG.review.example.com
+          secretName: $APP_NAME-tls
+        rules:
+        - host: $CI_COMMIT_REF_SLUG.review.example.com
+          http:
+            paths:
+            - path: /
+              pathType: Prefix
+              backend:
+                service:
+                  name: $APP_NAME
+                  port:
+                    number: 80
+      EOF
+    
+    - echo "Waiting for deployment to be ready..."
+    - kubectl rollout status deployment/$APP_NAME -n $REVIEW_NAMESPACE --timeout=5m
+    - echo "Review app deployed successfully!"
+  environment:
+    name: review/$CI_COMMIT_REF_SLUG
+    url: https://$CI_COMMIT_REF_SLUG.review.example.com
+    on_stop: stop-review
+    auto_stop_in: 1 week
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+stop-review:
+  stage: cleanup
+  image: bitnami/kubectl:latest
+  variables:
+    REVIEW_NAMESPACE: "review-$CI_COMMIT_REF_SLUG"
+    GIT_STRATEGY: none
+  script:
+    - echo "Stopping review app in namespace $REVIEW_NAMESPACE..."
+    - kubectl delete namespace $REVIEW_NAMESPACE --ignore-not-found=true
+    - echo "Review app stopped and cleaned up"
+  environment:
+    name: review/$CI_COMMIT_REF_SLUG
+    action: stop
+  when: manual
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# ============================================================================
+# STAGE: DEPLOY-STAGING
+# Deploy to staging environment on main branch
+# ============================================================================
+
+deploy-staging:
+  stage: deploy-staging
+  image: bitnami/kubectl:latest
+  needs:
+    - job: docker-build
+      artifacts: false
+    - job: container_scanning
+      artifacts: false
+  variables:
+    KUBE_NAMESPACE: "staging"
+  script:
+    - echo "Deploying to staging environment..."
+    - kubectl set image deployment/$APP_NAME app=$IMAGE_TAG_COMMIT -n $KUBE_NAMESPACE
+    - kubectl rollout status deployment/$APP_NAME -n $KUBE_NAMESPACE --timeout=5m
+    - echo "Staging deployment completed successfully!"
+  environment:
+    name: staging
+    url: https://staging.example.com
+    kubernetes:
+      namespace: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ============================================================================
+# STAGE: DEPLOY-PROD
+# Deploy to production (manual approval required)
+# ============================================================================
+
+deploy-production:
+  stage: deploy-prod
+  image: bitnami/kubectl:latest
+  needs:
+    - job: docker-build
+      artifacts: false
+    - job: container_scanning
+      artifacts: false
+  variables:
+    KUBE_NAMESPACE: "production"
+  before_script:
+    # Promote image to production tag
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker pull $IMAGE_TAG_COMMIT
+    - docker tag $IMAGE_TAG_COMMIT $CI_REGISTRY_IMAGE:production
+    - docker push $CI_REGISTRY_IMAGE:production
+  script:
+    - echo "Deploying to production environment..."
+    - kubectl set image deployment/$APP_NAME app=$CI_REGISTRY_IMAGE:production -n $KUBE_NAMESPACE
+    - kubectl rollout status deployment/$APP_NAME -n $KUBE_NAMESPACE --timeout=10m
+    
+    # Health check
+    - sleep 30
+    - |
+      if ! curl -f https://example.com/health; then
+        echo "Health check failed! Rolling back..."
+        kubectl rollout undo deployment/$APP_NAME -n $KUBE_NAMESPACE
+        exit 1
+      fi
+    
+    - echo "Production deployment completed successfully!"
+  after_script:
+    - kubectl get pods -n production
+  environment:
+    name: production
+    url: https://example.com
+    kubernetes:
+      namespace: production
+  when: manual  # Requires manual approval
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+# Rollback production deployment
+rollback-production:
+  stage: deploy-prod
+  image: bitnami/kubectl:latest
+  variables:
+    KUBE_NAMESPACE: "production"
+    GIT_STRATEGY: none
+  script:
+    - echo "Rolling back production deployment..."
+    - kubectl rollout undo deployment/$APP_NAME -n $KUBE_NAMESPACE
+    - kubectl rollout status deployment/$APP_NAME -n $KUBE_NAMESPACE --timeout=5m
+    - echo "Rollback completed"
+  environment:
+    name: production
+    action: rollback
+  when: manual
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ============================================================================
+# CLEANUP
+# Post-deployment cleanup tasks
+# ============================================================================
+
+cleanup-old-images:
+  stage: cleanup
+  image: alpine:latest
+  script:
+    - echo "Cleanup job - placeholder for registry cleanup"
+    - echo "In production, this would clean up old container images"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  when: manual

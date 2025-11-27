@@ -1,0 +1,264 @@
+# ============================================
+# APPLICATION ALERT RULES
+# ============================================
+# Application-level alerts for services
+# Covers: HTTP errors, latency, availability
+# ============================================
+
+groups:
+  # ==========================================
+  # HTTP ENDPOINT ALERTS
+  # ==========================================
+  - name: http_endpoint_alerts
+    interval: 30s
+    rules:
+      
+      # Endpoint Down
+      - alert: EndpointDown
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: endpoint
+          team: application
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} is down"
+          description: |
+            HTTP endpoint {{ $labels.instance }} has been unreachable for 2 minutes.
+            Probe type: {{ $labels.probe_type }}
+          runbook_url: "https://runbooks.example.com/endpoint-down"
+      
+      # Slow HTTP Response
+      - alert: SlowHTTPResponse
+        expr: probe_http_duration_seconds{job="blackbox-http"} > 5
+        for: 3m
+        labels:
+          severity: warning
+          component: endpoint
+          team: application
+        annotations:
+          summary: "Slow HTTP response from {{ $labels.instance }}"
+          description: |
+            HTTP endpoint {{ $labels.instance }} is responding slowly.
+            Response time: {{ $value | humanizeDuration }}
+            Threshold: 5 seconds
+      
+      # SSL Certificate Expiring Soon
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+          component: ssl
+          team: security
+        annotations:
+          summary: "SSL certificate expiring soon for {{ $labels.instance }}"
+          description: |
+            SSL certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}.
+            Please renew the certificate.
+      
+      # SSL Certificate Expired
+      - alert: SSLCertificateExpired
+        expr: probe_ssl_earliest_cert_expiry - time() < 0
+        for: 5m
+        labels:
+          severity: critical
+          component: ssl
+          team: security
+        annotations:
+          summary: "SSL certificate EXPIRED for {{ $labels.instance }}"
+          description: |
+            SSL certificate for {{ $labels.instance }} has expired!
+            Immediate action required.
+
+  # ==========================================
+  # HTTP ERROR RATE ALERTS
+  # ==========================================
+  - name: http_error_alerts
+    interval: 30s
+    rules:
+      
+      # High 4xx Error Rate
+      - alert: High4xxErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"4.."}[5m])) by (service) /
+          sum(rate(http_requests_total[5m])) by (service) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+          team: application
+        annotations:
+          summary: "High 4xx error rate for {{ $labels.service }}"
+          description: |
+            Service {{ $labels.service }} has {{ $value | humanizePercentage }} 4xx error rate.
+            This may indicate client-side issues.
+      
+      # High 5xx Error Rate
+      - alert: High5xxErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (service) /
+          sum(rate(http_requests_total[5m])) by (service) > 0.01
+        for: 3m
+        labels:
+          severity: critical
+          component: application
+          team: application
+        annotations:
+          summary: "High 5xx error rate for {{ $labels.service }}"
+          description: |
+            Service {{ $labels.service }} has {{ $value | humanizePercentage }} 5xx error rate.
+            This indicates server-side errors!
+          runbook_url: "https://runbooks.example.com/5xx-errors"
+
+  # ==========================================
+  # LATENCY ALERTS
+  # ==========================================
+  - name: latency_alerts
+    interval: 30s
+    rules:
+      
+      # High API Latency (P95)
+      - alert: HighAPILatencyP95
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: latency
+          team: application
+        annotations:
+          summary: "High API latency (P95) for {{ $labels.service }}"
+          description: |
+            95th percentile latency for {{ $labels.service }} is {{ $value | humanizeDuration }}.
+            Threshold: 1 second
+      
+      # High API Latency (P99)
+      - alert: HighAPILatencyP99
+        expr: |
+          histogram_quantile(0.99, 
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)
+          ) > 3
+        for: 5m
+        labels:
+          severity: critical
+          component: latency
+          team: application
+        annotations:
+          summary: "High API latency (P99) for {{ $labels.service }}"
+          description: |
+            99th percentile latency for {{ $labels.service }} is {{ $value | humanizeDuration }}.
+            User experience is degraded!
+
+  # ==========================================
+  # PROMETHEUS SELF-MONITORING
+  # ==========================================
+  - name: prometheus_alerts
+    interval: 30s
+    rules:
+      
+      # Prometheus Config Reload Failed
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: prometheus
+          team: monitoring
+        annotations:
+          summary: "Prometheus configuration reload failed"
+          description: |
+            Prometheus configuration reload has failed on {{ $labels.instance }}.
+            Check configuration syntax.
+      
+      # Prometheus Target Down
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: prometheus
+          team: monitoring
+        annotations:
+          summary: "Prometheus target {{ $labels.job }} is down"
+          description: |
+            Target {{ $labels.instance }} (job: {{ $labels.job }}) is down.
+      
+      # Prometheus TSDB Compaction Failed
+      - alert: PrometheusTSDBCompactionFailed
+        expr: rate(prometheus_tsdb_compactions_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: prometheus
+          team: monitoring
+        annotations:
+          summary: "Prometheus TSDB compaction failed"
+          description: |
+            Prometheus TSDB compaction is failing on {{ $labels.instance }}.
+            This may lead to increased disk usage.
+      
+      # Prometheus Storage Full
+      - alert: PrometheusStorageFull
+        expr: |
+          (prometheus_tsdb_storage_blocks_bytes / prometheus_tsdb_storage_blocks_bytes_total) > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          component: prometheus
+          team: monitoring
+        annotations:
+          summary: "Prometheus storage is nearly full"
+          description: |
+            Prometheus storage is {{ $value | humanizePercentage }} full on {{ $labels.instance }}.
+            Consider increasing retention size or cleaning up old data.
+
+  # ==========================================
+  # ALERTMANAGER ALERTS
+  # ==========================================
+  - name: alertmanager_alerts
+    interval: 30s
+    rules:
+      
+      # Alertmanager Config Reload Failed
+      - alert: AlertmanagerConfigReloadFailed
+        expr: alertmanager_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: alertmanager
+          team: monitoring
+        annotations:
+          summary: "Alertmanager configuration reload failed"
+          description: |
+            Alertmanager configuration reload has failed on {{ $labels.instance }}.
+            Alerts may not be routed correctly!
+      
+      # Alertmanager Notification Failed
+      - alert: AlertmanagerNotificationFailed
+        expr: rate(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: alertmanager
+          team: monitoring
+        annotations:
+          summary: "Alertmanager notifications failing"
+          description: |
+            Alertmanager on {{ $labels.instance }} is failing to send notifications to {{ $labels.integration }}.
+            Rate: {{ $value }} failures/sec
+
+# ==========================================
+# NOTES
+# ==========================================
+# These rules assume your application exposes metrics:
+# - http_requests_total{status, service}
+# - http_request_duration_seconds_bucket{service, le}
+#
+# If your app doesn't expose these, either:
+# 1. Instrument your app with Prometheus client library
+# 2. Use a metrics exporter (e.g., nginx-exporter)
+# 3. Modify these rules to match your metrics
+# ==========================================

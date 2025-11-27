@@ -1,0 +1,62 @@
+# Security Scanning Template
+# Integrated security scanning
+
+# Include GitLab security templates
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/Container-Scanning.gitlab-ci.yml
+
+# Customize SAST
+sast:
+  stage: security
+  variables:
+    SAST_EXCLUDED_PATHS: "spec, test, tests, tmp, node_modules, dist, build"
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+  allow_failure: false
+
+# Customize Dependency Scanning
+dependency_scanning:
+  stage: security
+  variables:
+    DS_EXCLUDED_PATHS: "spec, test, tests, tmp"
+  artifacts:
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+  allow_failure: false
+
+# Secret Detection
+secret_detection:
+  stage: security
+  artifacts:
+    reports:
+      secret_detection: gl-secret-detection-report.json
+  allow_failure: false
+
+# Container Scanning (requires image to be built first)
+container_scanning:
+  stage: security
+  variables:
+    CS_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    CS_SEVERITY_THRESHOLD: "high"
+  artifacts:
+    reports:
+      container_scanning: gl-container-scanning-report.json
+  allow_failure: false
+  needs: [docker-build]
+
+# Custom security check
+security-check:
+  stage: security
+  image: alpine:latest
+  script:
+    - echo "Running custom security checks..."
+    - |
+      if grep -r "TODO.*SECURITY" .; then
+        echo "Found security TODOs that need attention!"
+        exit 1
+      fi
+  allow_failure: true

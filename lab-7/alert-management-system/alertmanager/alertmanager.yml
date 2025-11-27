@@ -1,0 +1,321 @@
+# ============================================
+# ALERTMANAGER CONFIGURATION
+# ============================================
+# This file defines:
+# - Global settings
+# - Routing rules
+# - Receivers (PagerDuty, Slack, Email)
+# - Inhibition rules
+# - Templates
+# ============================================
+
+# ==========================================
+# GLOBAL CONFIGURATION
+# ==========================================
+global:
+  # Time to wait before sending a notification about a new alert
+  resolve_timeout: 5m
+  
+  # SMTP configuration for email notifications
+  smtp_from: '${SMTP_FROM}'
+  smtp_smarthost: '${SMTP_SMARTHOST}'
+  smtp_auth_username: '${SMTP_AUTH_USERNAME}'
+  smtp_auth_password: '${SMTP_AUTH_PASSWORD}'
+  smtp_require_tls: true
+  
+  # PagerDuty API URL
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+  
+  # Slack API URL (if using Slack)
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+# ==========================================
+# TEMPLATES
+# ==========================================
+# Custom notification templates
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# ==========================================
+# ROUTING CONFIGURATION
+# ==========================================
+# The root route defines how alerts are routed
+route:
+  # Default receiver for alerts that don't match any route
+  receiver: 'default'
+  
+  # Group alerts by these labels
+  # Alerts with the same labels will be grouped together
+  group_by: ['alertname', 'cluster', 'service']
+  
+  # How long to wait before sending the first notification
+  # This allows grouping of multiple alerts
+  group_wait: 10s
+  
+  # How long to wait before sending notification about new alerts
+  # that are added to a group of alerts for which an initial
+  # notification has already been sent
+  group_interval: 10s
+  
+  # How long to wait before re-sending a given alert
+  repeat_interval: 12h
+  
+  # Child routes (evaluated in order)
+  routes:
+    
+    # ----------------------------------------
+    # CRITICAL ALERTS → PagerDuty
+    # ----------------------------------------
+    - match:
+        severity: critical
+      receiver: pagerduty-critical
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 4h
+      continue: true  # Continue to other routes
+    
+    # ----------------------------------------
+    # WARNING ALERTS → Slack
+    # ----------------------------------------
+    - match:
+        severity: warning
+      receiver: slack-warnings
+      group_wait: 30s
+      group_interval: 10m
+      repeat_interval: 12h
+      continue: false
+    
+    # ----------------------------------------
+    # INFO ALERTS → Email
+    # ----------------------------------------
+    - match:
+        severity: info
+      receiver: email-info
+      group_wait: 5m
+      group_interval: 30m
+      repeat_interval: 24h
+      continue: false
+    
+    # ----------------------------------------
+    # INFRASTRUCTURE TEAM ALERTS
+    # ----------------------------------------
+    - match:
+        team: infrastructure
+      receiver: team-infrastructure
+      group_by: ['alertname', 'instance']
+      continue: false
+    
+    # ----------------------------------------
+    # APPLICATION TEAM ALERTS
+    # ----------------------------------------
+    - match:
+        team: application
+      receiver: team-application
+      group_by: ['alertname', 'service']
+      continue: false
+    
+    # ----------------------------------------
+    # DATABASE ALERTS → Dedicated Channel
+    # ----------------------------------------
+    - match_re:
+        component: database|postgres|mysql|redis
+      receiver: database-team
+      group_wait: 10s
+      repeat_interval: 6h
+      continue: false
+
+# ==========================================
+# INHIBITION RULES
+# ==========================================
+# Inhibition rules allow to mute a set of alerts given that
+# another alert is firing
+inhibit_rules:
+  
+  # Inhibit warning alerts if critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+  
+  # Inhibit all alerts if instance is down
+  - source_match:
+      alertname: 'InstanceDown'
+    target_match_re:
+      severity: 'warning|critical'
+    equal: ['instance']
+  
+  # Inhibit disk alerts if node is down
+  - source_match:
+      alertname: 'InstanceDown'
+    target_match_re:
+      alertname: 'LowDiskSpace|CriticalDiskSpace'
+    equal: ['instance']
+
+# ==========================================
+# RECEIVERS
+# ==========================================
+receivers:
+  
+  # ----------------------------------------
+  # DEFAULT RECEIVER (Fallback)
+  # ----------------------------------------
+  - name: 'default'
+    email_configs:
+      - to: 'devops-team@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[ALERT] {{ .GroupLabels.alertname }} - {{ .GroupLabels.cluster }}'
+        html: '{{ template "email.default.html" . }}'
+        text: '{{ template "email.default.text" . }}'
+  
+  # ----------------------------------------
+  # PAGERDUTY - CRITICAL ALERTS
+  # ----------------------------------------
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_INTEGRATION_KEY}'
+        send_resolved: true
+        
+        # Severity mapping
+        severity: '{{ if eq .CommonLabels.severity "critical" }}critical{{ else }}error{{ end }}'
+        
+        # Incident details
+        description: '{{ .CommonAnnotations.summary }}'
+        
+        # Custom details (visible in PagerDuty incident)
+        details:
+          firing: '{{ .Alerts.Firing | len }}'
+          resolved: '{{ .Alerts.Resolved | len }}'
+          cluster: '{{ .CommonLabels.cluster }}'
+          environment: '{{ .CommonLabels.environment }}'
+          alertname: '{{ .GroupLabels.alertname }}'
+          description: '{{ .CommonAnnotations.description }}'
+          runbook_url: '{{ .CommonAnnotations.runbook_url }}'
+        
+        # Links
+        client: 'Prometheus Alertmanager'
+        client_url: 'http://localhost:9093'
+  
+  # ----------------------------------------
+  # SLACK - WARNING ALERTS
+  # ----------------------------------------
+  - name: 'slack-warnings'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#alerts-warnings'
+        send_resolved: true
+        
+        # Message title
+        title: '{{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }} [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+        
+        # Message text
+        text: '{{ template "slack.default.text" . }}'
+        
+        # Color coding
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        
+        # Additional fields
+        fields:
+          - title: 'Severity'
+            value: '{{ .CommonLabels.severity }}'
+            short: true
+          - title: 'Cluster'
+            value: '{{ .CommonLabels.cluster }}'
+            short: true
+          - title: 'Firing Alerts'
+            value: '{{ .Alerts.Firing | len }}'
+            short: true
+          - title: 'Resolved Alerts'
+            value: '{{ .Alerts.Resolved | len }}'
+            short: true
+        
+        # Actions
+        actions:
+          - type: button
+            text: 'View in Prometheus'
+            url: 'http://localhost:9090/alerts'
+          - type: button
+            text: 'View in Alertmanager'
+            url: 'http://localhost:9093'
+  
+  # ----------------------------------------
+  # EMAIL - INFO ALERTS
+  # ----------------------------------------
+  - name: 'email-info'
+    email_configs:
+      - to: 'devops-team@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[INFO] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.default.html" . }}'
+  
+  # ----------------------------------------
+  # TEAM-SPECIFIC RECEIVERS
+  # ----------------------------------------
+  - name: 'team-infrastructure'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_INTEGRATION_KEY}'
+        severity: '{{ .CommonLabels.severity }}'
+        description: '[Infrastructure] {{ .CommonAnnotations.summary }}'
+    
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#team-infrastructure'
+        title: '[Infrastructure] {{ .GroupLabels.alertname }}'
+        text: '{{ .CommonAnnotations.description }}'
+  
+  - name: 'team-application'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_INTEGRATION_KEY}'
+        severity: '{{ .CommonLabels.severity }}'
+        description: '[Application] {{ .CommonAnnotations.summary }}'
+    
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK_URL}'
+        channel: '#team-application'
+        title: '[Application] {{ .GroupLabels.alertname }}'
+        text: '{{ .CommonAnnotations.description }}'
+  
+  - name: 'database-team'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_INTEGRATION_KEY}'
+        severity: critical
+        description: '[Database] {{ .CommonAnnotations.summary }}'
+    
+    email_configs:
+      - to: 'database-team@example.com'
+        send_resolved: true
+        headers:
+          Subject: '[DATABASE ALERT] {{ .GroupLabels.alertname }}'
+
+# ==========================================
+# CONFIGURATION NOTES
+# ==========================================
+# 
+# 1. Environment Variables:
+#    - ${PAGERDUTY_INTEGRATION_KEY}: Set in .env file
+#    - ${SLACK_WEBHOOK_URL}: Set in .env file
+#    - ${SMTP_*}: Set in .env file for email
+#
+# 2. Routing Logic:
+#    - Alerts are evaluated top-to-bottom
+#    - First matching route is used (unless continue: true)
+#    - Use 'continue: true' to send to multiple receivers
+#
+# 3. Grouping:
+#    - group_by: Groups similar alerts together
+#    - group_wait: Initial wait before sending
+#    - group_interval: Wait between grouped notifications
+#    - repeat_interval: How often to resend
+#
+# 4. Testing:
+#    - Validate config: amtool check-config alertmanager.yml
+#    - Send test alert: ./scripts/test-alerts.sh
+#    - View alerts: http://localhost:9093
+#
+# 5. Reload Configuration:
+#    - docker-compose exec alertmanager kill -HUP 1
+#    - OR: curl -X POST http://localhost:9093/-/reload
+#
+# ==========================================

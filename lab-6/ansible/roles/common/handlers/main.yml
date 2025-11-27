@@ -1,0 +1,13 @@
+---
+# ============================================================================
+# Common Role - Handlers
+# ============================================================================
+
+- name: Restart chrony
+  service:
+    name: chrony
+    state: restarted
+
+- name: Reload systemd
+  systemd:
+    daemon_reload: yes

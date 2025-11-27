@@ -1,0 +1,20 @@
+---
+# ============================================================================
+# Nginx Role - Default Variables
+# ============================================================================
+
+# Nginx configuration
+nginx_root: /var/www/html
+nginx_server_name: _
+nginx_worker_processes: auto
+nginx_worker_connections: 1024
+nginx_keepalive_timeout: 65
+nginx_client_max_body_size: 20M
+
+# Logging
+nginx_access_log: /var/log/nginx/access.log
+nginx_error_log: /var/log/nginx/error.log
+
+# SSL configuration (if needed)
+nginx_ssl_certificate: /etc/ssl/certs/nginx-selfsigned.crt
+nginx_ssl_certificate_key: /etc/ssl/private/nginx-selfsigned.key

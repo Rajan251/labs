@@ -1,0 +1,32 @@
+---
+# ============================================================================
+# Global Variables for All Hosts
+# ============================================================================
+
+# Environment
+environment: production
+
+# Timezone
+timezone: UTC
+
+# Admin user
+admin_username: admin
+
+# NTP configuration
+ntp_enabled: true
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+  - 2.pool.ntp.org
+  - 3.pool.ntp.org
+
+# Firewall configuration
+firewall_enabled: true
+firewall_default_policy: deny
+
+# Logging
+log_retention_days: 30
+
+# Security
+disable_root_login: true
+password_authentication: false

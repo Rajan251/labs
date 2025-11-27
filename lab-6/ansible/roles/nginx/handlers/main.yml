@@ -1,0 +1,18 @@
+---
+# ============================================================================
+# Nginx Role - Handlers
+# ============================================================================
+
+- name: Restart Nginx
+  service:
+    name: nginx
+    state: restarted
+
+- name: Reload Nginx
+  service:
+    name: nginx
+    state: reloaded
+
+- name: Validate Nginx configuration
+  command: nginx -t
+  changed_when: false

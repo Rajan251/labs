@@ -1,0 +1,67 @@
+# ============================================================================
+# AWS EC2 Dynamic Inventory Plugin Configuration
+# ============================================================================
+# This file configures the AWS EC2 dynamic inventory plugin for Ansible.
+# It automatically discovers EC2 instances based on filters and tags.
+# ============================================================================
+
+plugin: aws_ec2
+
+# AWS regions to query
+regions:
+  - us-east-1
+  - us-west-2
+
+# Filters to apply when discovering instances
+filters:
+  # Only running instances
+  instance-state-name: running
+  
+  # Filter by tags (optional)
+  tag:Environment: production
+  tag:ManagedBy: Terraform
+
+# Group instances by tags
+keyed_groups:
+  # Group by Role tag: role_webserver, role_appserver
+  - key: tags.Role
+    prefix: role
+    separator: _
+  
+  # Group by Environment tag: env_production, env_staging
+  - key: tags.Environment
+    prefix: env
+    separator: _
+  
+  # Group by instance type: type_t2_micro, type_t3_small
+  - key: instance_type
+    prefix: type
+    separator: _
+
+# Compose variables for each host
+compose:
+  # Use public IP as ansible_host
+  ansible_host: public_ip_address
+  
+  # Set ansible_user based on AMI
+  ansible_user: "'ubuntu'"
+  
+  # Custom variables
+  ec2_instance_id: instance_id
+  ec2_instance_type: instance_type
+  ec2_availability_zone: placement.availability_zone
+
+# Hostname preferences (in order of preference)
+hostnames:
+  - tag:Name
+  - dns-name
+  - public-ip-address
+
+# Use constructed groups
+use_contrib_script_compatible_sanitization: true
+
+# Cache settings (optional, improves performance)
+cache: yes
+cache_plugin: jsonfile
+cache_timeout: 300
+cache_connection: /tmp/ansible_inventory_cache

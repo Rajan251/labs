@@ -1,0 +1,170 @@
+---
+# ============================================================================
+# Common Role - Main Tasks
+# ============================================================================
+# This role performs basic system configuration on all servers
+# ============================================================================
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  tags:
+    - common
+    - packages
+
+- name: Upgrade all packages to latest version
+  apt:
+    upgrade: dist
+    autoremove: yes
+    autoclean: yes
+  tags:
+    - common
+    - packages
+    - updates
+
+- name: Install essential system packages
+  apt:
+    name:
+      - vim
+      - curl
+      - wget
+      - git
+      - htop
+      - net-tools
+      - unzip
+      - tree
+      - jq
+      - python3
+      - python3-pip
+      - build-essential
+      - software-properties-common
+    state: present
+  tags:
+    - common
+    - packages
+
+- name: Set timezone
+  timezone:
+    name: "{{ timezone }}"
+  tags:
+    - common
+    - timezone
+
+- name: Configure NTP
+  apt:
+    name: chrony
+    state: present
+  tags:
+    - common
+    - ntp
+
+- name: Start and enable chrony service
+  service:
+    name: chrony
+    state: started
+    enabled: yes
+  tags:
+    - common
+    - ntp
+
+- name: Create admin user
+  user:
+    name: "{{ admin_username }}"
+    groups: sudo
+    shell: /bin/bash
+    create_home: yes
+    state: present
+  when: admin_username is defined
+  tags:
+    - common
+    - users
+
+- name: Configure UFW firewall - Allow SSH
+  ufw:
+    rule: allow
+    port: '22'
+    proto: tcp
+  tags:
+    - common
+    - firewall
+
+- name: Configure UFW firewall - Allow HTTP
+  ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+  tags:
+    - common
+    - firewall
+
+- name: Configure UFW firewall - Allow HTTPS
+  ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+  tags:
+    - common
+    - firewall
+
+- name: Enable UFW firewall
+  ufw:
+    state: enabled
+  tags:
+    - common
+    - firewall
+
+- name: Configure sysctl for performance
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop:
+    - { name: 'vm.swappiness', value: '10' }
+    - { name: 'net.ipv4.tcp_fin_timeout', value: '30' }
+    - { name: 'net.ipv4.tcp_keepalive_time', value: '300' }
+  tags:
+    - common
+    - sysctl
+
+- name: Set hostname
+  hostname:
+    name: "{{ inventory_hostname }}"
+  tags:
+    - common
+    - hostname
+
+- name: Update /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    line: "127.0.1.1 {{ inventory_hostname }}"
+    state: present
+  tags:
+    - common
+    - hostname
+
+- name: Configure automatic security updates
+  apt:
+    name: unattended-upgrades
+    state: present
+  tags:
+    - common
+    - security
+
+- name: Enable automatic security updates
+  copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+  tags:
+    - common
+    - security
+
+- name: Display completion message
+  debug:
+    msg: "Common configuration completed successfully on {{ inventory_hostname }}"
+  tags:
+    - common

@@ -1,0 +1,348 @@
+# ============================================
+# MESSAGING & SEARCH ENGINE ALERT RULES
+# ============================================
+# Alerts for RabbitMQ, Elasticsearch
+# ============================================
+
+groups:
+  # ==========================================
+  # RABBITMQ ALERTS
+  # ==========================================
+  - name: rabbitmq_alerts
+    interval: 30s
+    rules:
+      
+      # RabbitMQ Down
+      - alert: RabbitMQDown
+        expr: rabbitmq_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: messaging
+          team: backend
+        annotations:
+          summary: "RabbitMQ is down on {{ $labels.instance }}"
+          description: |
+            RabbitMQ message broker on {{ $labels.instance }} is not responding.
+            Message processing will fail!
+          runbook_url: "https://runbooks.example.com/rabbitmq-down"
+      
+      # RabbitMQ Node Down
+      - alert: RabbitMQNodeDown
+        expr: rabbitmq_running == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: messaging
+          team: backend
+        annotations:
+          summary: "RabbitMQ node {{ $labels.node }} is down"
+          description: |
+            RabbitMQ node {{ $labels.node }} on {{ $labels.instance }} is not running.
+      
+      # RabbitMQ High Memory Usage
+      - alert: RabbitMQHighMemory
+        expr: |
+          (rabbitmq_node_mem_used / rabbitmq_node_mem_limit) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: messaging
+          team: backend
+        annotations:
+          summary: "High RabbitMQ memory usage on {{ $labels.instance }}"
+          description: |
+            RabbitMQ memory usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+            Used: {{ with query "rabbitmq_node_mem_used" }}{{ . | first | value | humanize1024 }}B{{ end }}
+            Limit: {{ with query "rabbitmq_node_mem_limit" }}{{ . | first | value | humanize1024 }}B{{ end }}
+      
+      # RabbitMQ Memory Alarm
+      - alert: RabbitMQMemoryAlarm
+        expr: rabbitmq_node_mem_alarm > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: messaging
+          team: backend
+        annotations:
+          summary: "RabbitMQ memory alarm on {{ $labels.instance }}"
+          description: |
+            RabbitMQ has triggered a memory alarm on {{ $labels.instance }}.
+            Publishers will be blocked!
+      
+      # RabbitMQ Disk Space Alarm
+      - alert: RabbitMQDiskAlarm
+        expr: rabbitmq_node_disk_free_alarm > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: messaging
+          team: backend
+        annotations:
+          summary: "RabbitMQ disk alarm on {{ $labels.instance }}"
+          description: |
+            RabbitMQ has triggered a disk space alarm on {{ $labels.instance }}.
+            Publishers will be blocked!
+      
+      # RabbitMQ Too Many Connections
+      - alert: RabbitMQTooManyConnections
+        expr: rabbitmq_connections > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: messaging
+          team: backend
+        annotations:
+          summary: "Too many RabbitMQ connections on {{ $labels.instance }}"
+          description: |
+            RabbitMQ has {{ $value }} connections on {{ $labels.instance }}.
+      
+      # RabbitMQ Queue Messages Piling Up
+      - alert: RabbitMQQueueMessagesPilingUp
+        expr: |
+          rabbitmq_queue_messages_ready > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: messaging
+          team: backend
+        annotations:
+          summary: "Messages piling up in queue {{ $labels.queue }}"
+          description: |
+            Queue {{ $labels.queue }} has {{ $value }} ready messages on {{ $labels.instance }}.
+            Consumers may not be keeping up!
+      
+      # RabbitMQ Queue Messages Unacknowledged
+      - alert: RabbitMQUnacknowledgedMessages
+        expr: |
+          rabbitmq_queue_messages_unacked > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: messaging
+          team: backend
+        annotations:
+          summary: "Too many unacknowledged messages in {{ $labels.queue }}"
+          description: |
+            Queue {{ $labels.queue }} has {{ $value }} unacknowledged messages on {{ $labels.instance }}.
+            Consumers may be stuck!
+      
+      # RabbitMQ No Consumers
+      - alert: RabbitMQNoConsumers
+        expr: |
+          rabbitmq_queue_consumers == 0 and rabbitmq_queue_messages > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: messaging
+          team: backend
+        annotations:
+          summary: "No consumers for queue {{ $labels.queue }}"
+          description: |
+            Queue {{ $labels.queue }} has {{ with query "rabbitmq_queue_messages" }}{{ . | first | value }}{{ end }} messages but no consumers on {{ $labels.instance }}.
+      
+      # RabbitMQ High Message Publish Rate
+      - alert: RabbitMQHighPublishRate
+        expr: rate(rabbitmq_queue_messages_published_total[5m]) > 1000
+        for: 10m
+        labels:
+          severity: info
+          component: messaging
+          team: backend
+        annotations:
+          summary: "High message publish rate on {{ $labels.instance }}"
+          description: |
+            RabbitMQ is receiving {{ $value | humanize }} messages/sec on {{ $labels.instance }}.
+      
+      # RabbitMQ Cluster Partition
+      - alert: RabbitMQClusterPartition
+        expr: rabbitmq_partitions > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: messaging
+          team: backend
+        annotations:
+          summary: "RabbitMQ cluster partition detected"
+          description: |
+            RabbitMQ cluster has {{ $value }} partitions.
+            This can lead to data inconsistency!
+
+  # ==========================================
+  # ELASTICSEARCH ALERTS
+  # ==========================================
+  - name: elasticsearch_alerts
+    interval: 30s
+    rules:
+      
+      # Elasticsearch Down
+      - alert: ElasticsearchDown
+        expr: elasticsearch_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: search
+          team: backend
+        annotations:
+          summary: "Elasticsearch is down on {{ $labels.instance }}"
+          description: |
+            Elasticsearch cluster on {{ $labels.instance }} is not responding.
+            Search functionality will fail!
+          runbook_url: "https://runbooks.example.com/elasticsearch-down"
+      
+      # Elasticsearch Cluster Red
+      - alert: ElasticsearchClusterRed
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 2m
+        labels:
+          severity: critical
+          component: search
+          team: backend
+        annotations:
+          summary: "Elasticsearch cluster is RED"
+          description: |
+            Elasticsearch cluster {{ $labels.cluster }} is in RED state.
+            Some primary shards are not allocated!
+      
+      # Elasticsearch Cluster Yellow
+      - alert: ElasticsearchClusterYellow
+        expr: elasticsearch_cluster_health_status{color="yellow"} == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: search
+          team: backend
+        annotations:
+          summary: "Elasticsearch cluster is YELLOW"
+          description: |
+            Elasticsearch cluster {{ $labels.cluster }} is in YELLOW state.
+            Some replica shards are not allocated.
+      
+      # Elasticsearch High JVM Memory Usage
+      - alert: ElasticsearchHighJVMMemory
+        expr: |
+          (elasticsearch_jvm_memory_used_bytes{area="heap"} / 
+           elasticsearch_jvm_memory_max_bytes{area="heap"}) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+          team: backend
+        annotations:
+          summary: "High Elasticsearch JVM memory on {{ $labels.instance }}"
+          description: |
+            Elasticsearch JVM heap usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+      
+      # Elasticsearch High CPU Usage
+      - alert: ElasticsearchHighCPU
+        expr: elasticsearch_os_cpu_percent > 90
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+          team: backend
+        annotations:
+          summary: "High Elasticsearch CPU usage on {{ $labels.instance }}"
+          description: |
+            Elasticsearch CPU usage is {{ $value | humanize }}% on {{ $labels.instance }}.
+      
+      # Elasticsearch Disk Space Low
+      - alert: ElasticsearchDiskSpaceLow
+        expr: |
+          (elasticsearch_filesystem_data_available_bytes / 
+           elasticsearch_filesystem_data_size_bytes) * 100 < 20
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+          team: backend
+        annotations:
+          summary: "Low disk space on Elasticsearch node {{ $labels.instance }}"
+          description: |
+            Elasticsearch node {{ $labels.instance }} has {{ $value | humanize }}% disk space available.
+      
+      # Elasticsearch Unassigned Shards
+      - alert: ElasticsearchUnassignedShards
+        expr: elasticsearch_cluster_health_unassigned_shards > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+          team: backend
+        annotations:
+          summary: "Elasticsearch has unassigned shards"
+          description: |
+            Elasticsearch cluster {{ $labels.cluster }} has {{ $value }} unassigned shards.
+      
+      # Elasticsearch Pending Tasks
+      - alert: ElasticsearchPendingTasks
+        expr: elasticsearch_cluster_health_number_of_pending_tasks > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: search
+          team: backend
+        annotations:
+          summary: "Elasticsearch has pending tasks"
+          description: |
+            Elasticsearch cluster {{ $labels.cluster }} has {{ $value }} pending tasks.
+            Cluster may be overloaded.
+      
+      # Elasticsearch High Query Rate
+      - alert: ElasticsearchHighQueryRate
+        expr: rate(elasticsearch_indices_search_query_total[5m]) > 1000
+        for: 10m
+        labels:
+          severity: info
+          component: search
+          team: backend
+        annotations:
+          summary: "High Elasticsearch query rate"
+          description: |
+            Elasticsearch is processing {{ $value | humanize }} queries/sec.
+      
+      # Elasticsearch High Indexing Rate
+      - alert: ElasticsearchHighIndexingRate
+        expr: rate(elasticsearch_indices_indexing_index_total[5m]) > 10000
+        for: 10m
+        labels:
+          severity: info
+          component: search
+          team: backend
+        annotations:
+          summary: "High Elasticsearch indexing rate"
+          description: |
+            Elasticsearch is indexing {{ $value | humanize }} documents/sec.
+      
+      # Elasticsearch Slow Queries
+      - alert: ElasticsearchSlowQueries
+        expr: rate(elasticsearch_indices_search_query_time_seconds[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+          team: backend
+        annotations:
+          summary: "Slow Elasticsearch queries detected"
+          description: |
+            Elasticsearch queries are taking {{ $value | humanizeDuration }} on average.
+
+# ==========================================
+# QUERY EXPLANATIONS
+# ==========================================
+# 
+# RabbitMQ Memory:
+# (rabbitmq_node_mem_used / rabbitmq_node_mem_limit) * 100
+# - Calculates percentage of memory limit used
+#
+# Elasticsearch JVM Memory:
+# (elasticsearch_jvm_memory_used_bytes{area="heap"} / 
+#  elasticsearch_jvm_memory_max_bytes{area="heap"}) * 100
+# - Calculates percentage of JVM heap used
+#
+# Elasticsearch Disk:
+# (elasticsearch_filesystem_data_available_bytes / 
+#  elasticsearch_filesystem_data_size_bytes) * 100
+# - Calculates percentage of disk space available
+#
+# ==========================================

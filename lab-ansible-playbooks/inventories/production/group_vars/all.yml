@@ -1,0 +1,38 @@
+---
+# Common variables for all production hosts
+
+# NTP Configuration
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+
+# DNS Servers
+dns_servers:
+  - 8.8.8.8
+  - 8.8.4.4
+
+# Timezone
+timezone: "UTC"
+
+# Common packages
+common_packages:
+  - vim
+  - git
+  - curl
+  - wget
+  - htop
+  - net-tools
+  - python3
+  - python3-pip
+
+# SSH Configuration
+ssh_port: 22
+ssh_permit_root_login: "no"
+ssh_password_authentication: "no"
+
+# Monitoring
+enable_monitoring: true
+monitoring_server: "prometheus.example.com"
+
+# Logging
+log_server: "logstash.example.com:5044"

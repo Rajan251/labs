@@ -1,0 +1,34 @@
+---
+# Master playbook - orchestrates all infrastructure
+
+- name: Apply common configuration to all hosts
+  hosts: all
+  become: yes
+  roles:
+    - common
+  tags:
+    - common
+
+- name: Configure web servers
+  hosts: webservers
+  become: yes
+  roles:
+    - nginx
+  tags:
+    - webservers
+
+- name: Configure database servers
+  hosts: databases
+  become: yes
+  roles:
+    - postgresql
+  tags:
+    - databases
+
+- name: Configure application servers
+  hosts: appservers
+  become: yes
+  roles:
+    - docker
+  tags:
+    - appservers

@@ -1,0 +1,43 @@
+# Ansible
+*.retry
+*.log
+.vault_pass
+vault_pass.txt
+
+# Python
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+**/vault.yml
+secrets/
+*.pem
+*.key
+!*.pub
+
+# Cache
+.cache/
+/tmp/
+fact_cache/
+/tmp/ansible_facts
+
+# Test
+.molecule/
+.pytest_cache/

@@ -1,0 +1,29 @@
+# Production Requirements
+# FastAPI and server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+gunicorn==21.2.0
+python-multipart==0.0.6
+
+# Database
+pymongo==4.6.1
+motor==3.3.2  # Async MongoDB driver
+
+# Cache and messaging
+redis==5.0.1
+celery==5.3.6
+kombu==5.3.5  # Celery dependency for RabbitMQ
+
+# Validation and serialization
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Utilities
+python-dotenv==1.0.0
+python-jose[cryptography]==3.3.0  # For JWT if needed
+
+# Logging and monitoring
+python-json-logger==2.0.7
+
+# HTTP client (for health checks)
+httpx==0.26.0

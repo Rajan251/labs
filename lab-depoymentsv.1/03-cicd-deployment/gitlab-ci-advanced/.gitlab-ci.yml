@@ -1,0 +1,78 @@
+# 03-cicd-deployment/gitlab-ci-advanced/.gitlab-ci.yml
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+stages:
+  - build
+  - test
+  - security
+  - review
+  - deploy
+
+variables:
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+
+# 1. Build with Caching
+build:
+  stage: build
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build --cache-from $CI_REGISTRY_IMAGE:latest -t $DOCKER_IMAGE .
+    - docker push $DOCKER_IMAGE
+
+# 2. Parallel Testing
+unit_tests:
+  stage: test
+  image: python:3.9
+  script:
+    - pip install pytest
+    - pytest tests/unit
+
+integration_tests:
+  stage: test
+  image: python:3.9
+  script:
+    - pip install pytest
+    - pytest tests/integration
+
+# 3. Dynamic Review Environment (Ephemeral)
+deploy_review:
+  stage: review
+  image: dtzar/helm-kubectl
+  script:
+    - echo "Deploying Review App for MR $CI_MERGE_REQUEST_IID"
+    - kubectl create ns review-$CI_MERGE_REQUEST_IID || true
+    - kubectl set image deployment/myapp myapp=$DOCKER_IMAGE -n review-$CI_MERGE_REQUEST_IID
+  environment:
+    name: review/$CI_COMMIT_REF_SLUG
+    url: https://review-$CI_MERGE_REQUEST_IID.example.com
+    on_stop: stop_review
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+
+stop_review:
+  stage: review
+  script:
+    - echo "Stopping Review App"
+    - kubectl delete ns review-$CI_MERGE_REQUEST_IID
+  environment:
+    name: review/$CI_COMMIT_REF_SLUG
+    action: stop
+  when: manual
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+
+# 4. Production Deployment (Manual Gate)
+deploy_prod:
+  stage: deploy
+  script:
+    - echo "Deploying to Production"
+  environment:
+    name: production
+  when: manual
+  only:
+    - main

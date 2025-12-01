@@ -1,0 +1,12 @@
+# 11-ab-testing-deployment/feature-flags/config.yaml
+features:
+  new_checkout_flow:
+    enabled: true
+    rules:
+      - type: user_id
+        operator: in
+        values: ["user123", "user456"]
+      - type: percentage
+        value: 20
+  dark_mode:
+    enabled: false

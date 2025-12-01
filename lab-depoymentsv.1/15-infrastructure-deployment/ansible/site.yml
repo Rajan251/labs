@@ -1,0 +1,8 @@
+# 15-infrastructure-deployment/ansible/site.yml
+---
+- name: Configure Web Servers
+  hosts: webservers
+  become: true
+  
+  roles:
+    - webserver

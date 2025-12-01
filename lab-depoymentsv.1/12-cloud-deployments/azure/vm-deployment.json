@@ -1,0 +1,27 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "adminUsername": {
+            "type": "string",
+            "metadata": {
+                "description": "User name for the Virtual Machine."
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2021-03-01",
+            "name": "MyVM",
+            "location": "East US",
+            "properties": {
+                "osProfile": {
+                    "computerName": "MyVM",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "customData": "[base64(concat('#!/bin/bash\n', 'apt-get update && apt-get install -y docker.io\n', 'docker run -d -p 80:80 nginx\n'))]"
+                }
+            }
+        }
+    ]
+}

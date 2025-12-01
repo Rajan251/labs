@@ -1,0 +1,20 @@
+# 12-cloud-deployments/azure/aks-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-aks
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myregistry.azurecr.io/myapp:latest
+        ports:
+        - containerPort: 8000

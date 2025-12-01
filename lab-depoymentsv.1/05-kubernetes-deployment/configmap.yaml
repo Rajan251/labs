@@ -1,0 +1,9 @@
+# 05-kubernetes-deployment/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-config
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  MAX_CONNECTIONS: "100"

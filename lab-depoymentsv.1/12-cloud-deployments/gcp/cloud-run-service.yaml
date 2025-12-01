@@ -1,0 +1,17 @@
+# 12-cloud-deployments/gcp/cloud-run-service.yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: myapp-run
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    spec:
+      containers:
+      - image: gcr.io/my-project/myapp:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: ENV
+          value: "production"

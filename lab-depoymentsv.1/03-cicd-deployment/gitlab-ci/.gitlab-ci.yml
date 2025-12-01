@@ -1,0 +1,63 @@
+# 03-cicd-deployment/gitlab-ci/.gitlab-ci.yml
+stages:
+  - build
+  - test
+  - docker-build
+  - deploy
+
+variables:
+  DOCKER_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+
+build:
+  stage: build
+  image: python:3.9
+  script:
+    - pip install -r requirements.txt
+  artifacts:
+    paths:
+      - venv/
+
+test:
+  stage: test
+  image: python:3.9
+  script:
+    - pip install pytest
+    - pytest tests/
+
+docker-build:
+  stage: docker-build
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $DOCKER_IMAGE .
+    - docker push $DOCKER_IMAGE
+
+deploy_staging:
+  stage: deploy
+  image: dtzar/helm-kubectl
+  script:
+    - echo "Deploying to Staging..."
+    - kubectl config set-cluster my-cluster --server=$KUBE_URL --insecure-skip-tls-verify=true
+    - kubectl config set-credentials admin --token=$KUBE_TOKEN
+    - kubectl config set-context default --cluster=my-cluster --user=admin
+    - kubectl config use-context default
+    - kubectl set image deployment/myapp myapp=$DOCKER_IMAGE -n staging
+  environment:
+    name: staging
+  only:
+    - develop
+
+deploy_production:
+  stage: deploy
+  image: dtzar/helm-kubectl
+  script:
+    - echo "Deploying to Production..."
+    - kubectl set image deployment/myapp myapp=$DOCKER_IMAGE -n production
+  environment:
+    name: production
+  when: manual
+  only:
+    - main

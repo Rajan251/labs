@@ -1,0 +1,25 @@
+# 08-canary-deployment/kubernetes/canary-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-canary
+  labels:
+    app: myapp
+    version: canary
+spec:
+  replicas: 1 # Start small
+  selector:
+    matchLabels:
+      app: myapp
+      version: canary
+  template:
+    metadata:
+      labels:
+        app: myapp
+        version: canary
+    spec:
+      containers:
+      - name: myapp
+        image: myregistry/myapp:v2.0.0-rc1
+        ports:
+        - containerPort: 8000

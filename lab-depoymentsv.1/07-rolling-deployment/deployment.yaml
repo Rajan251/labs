@@ -1,0 +1,28 @@
+# 07-rolling-deployment/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-rolling
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2        # Create 2 new pods above desired count
+      maxUnavailable: 1  # Allow 1 pod to be unavailable during update
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myregistry/myapp:v2.0.0
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5

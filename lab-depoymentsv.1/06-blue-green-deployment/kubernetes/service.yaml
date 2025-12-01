@@ -1,0 +1,14 @@
+# 06-blue-green-deployment/kubernetes/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-service
+spec:
+  selector:
+    app: myapp
+    version: v1 # Change to v2 to switch traffic to Green
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP

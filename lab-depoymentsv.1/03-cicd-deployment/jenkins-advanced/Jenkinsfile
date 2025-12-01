@@ -1,0 +1,68 @@
+// 03-cicd-deployment/jenkins-advanced/Jenkinsfile
+@Library('my-shared-library') _
+
+pipeline {
+    agent {
+        docker { 
+            image 'python:3.9-slim' 
+            args '-u root'
+        }
+    }
+
+    environment {
+        IMAGE_NAME = "myapp:${BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Parallel Checks') {
+            parallel {
+                stage('Lint') {
+                    steps {
+                        sh 'pip install flake8 && flake8 .'
+                    }
+                }
+                stage('Unit Tests') {
+                    steps {
+                        sh 'pip install pytest && pytest tests/unit'
+                    }
+                }
+                stage('Security Scan') {
+                    steps {
+                        // Using a shared library function
+                        trivyScan(image: "myapp:latest")
+                    }
+                }
+            }
+        }
+
+        stage('Build & Push') {
+            steps {
+                script {
+                    docker.withRegistry('https://registry.example.com', 'docker-creds') {
+                        def app = docker.build(IMAGE_NAME)
+                        app.push()
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            steps {
+                // Call a custom step from shared library
+                deployToK8s(env: 'staging', image: IMAGE_NAME)
+            }
+        }
+
+        stage('Approval') {
+            steps {
+                input message: 'Promote to Production?', ok: 'Promote'
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                deployToK8s(env: 'production', image: IMAGE_NAME)
+            }
+        }
+    }
+}

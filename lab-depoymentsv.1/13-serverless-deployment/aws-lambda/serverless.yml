@@ -1,0 +1,16 @@
+# 13-serverless-deployment/aws-lambda/serverless.yml
+service: my-serverless-app
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: us-east-1
+
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - http:
+          path: /hello
+          method: get

@@ -1,0 +1,20 @@
+# 09-recreate-deployment/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp-recreate
+spec:
+  replicas: 3
+  strategy:
+    type: Recreate # Kills all pods before creating new ones
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myregistry/myapp:v2.0.0

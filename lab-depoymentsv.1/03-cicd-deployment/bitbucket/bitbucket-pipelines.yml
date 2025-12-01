@@ -1,0 +1,31 @@
+# 03-cicd-deployment/bitbucket/bitbucket-pipelines.yml
+image: python:3.9
+
+pipelines:
+  default:
+    - step:
+        name: Build and Test
+        script:
+          - pip install -r requirements.txt
+          - pytest
+
+  branches:
+    main:
+      - step:
+          name: Build Docker Image
+          services:
+            - docker
+          script:
+            - docker build -t myregistry/myapp:$BITBUCKET_COMMIT .
+            - docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+            - docker push myregistry/myapp:$BITBUCKET_COMMIT
+
+      - step:
+          name: Deploy to Kubernetes
+          image: atlassian/pipelines-kubectl
+          script:
+            - kubectl config set-cluster my-cluster --server=$KUBE_URL --certificate-authority=$KUBE_CA
+            - kubectl config set-credentials admin --token=$KUBE_TOKEN
+            - kubectl config set-context default --cluster=my-cluster --user=admin
+            - kubectl config use-context default
+            - kubectl set image deployment/myapp myapp=myregistry/myapp:$BITBUCKET_COMMIT

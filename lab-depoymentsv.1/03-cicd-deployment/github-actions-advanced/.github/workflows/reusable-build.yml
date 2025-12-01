@@ -1,0 +1,24 @@
+# 03-cicd-deployment/github-actions-advanced/.github/workflows/reusable-build.yml
+name: Reusable Build Workflow
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        required: true
+        type: string
+    secrets:
+      token:
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Build
+        run: echo "Building with Python ${{ inputs.python-version }}"

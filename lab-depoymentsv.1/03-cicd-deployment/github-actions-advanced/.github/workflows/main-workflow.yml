@@ -1,0 +1,115 @@
+# 03-cicd-deployment/github-actions-advanced/.github/workflows/main-workflow.yml
+name: Advanced CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Concurrency: Cancel in-progress builds for the same PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # 1. Linting & Static Analysis
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip' # Built-in caching
+      - name: Install dependencies
+        run: pip install flake8
+      - name: Lint with flake8
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  # 2. Matrix Testing (Test across multiple versions)
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10']
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run Tests
+        run: pytest
+
+  # 3. Security Scanning (Trivy)
+  security-scan:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build Docker Image (for scanning)
+        run: docker build -t myapp:${{ github.sha }} .
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'myapp:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1' # Fail build on critical vulnerabilities
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  # 4. Build & Push (Only on Push to Main)
+  build-push:
+    needs: security-scan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v3
+      - name: Log in to Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 5. GitOps Trigger (Update ArgoCD Repo)
+  gitops-trigger:
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Config Repo
+        uses: actions/checkout@v3
+        with:
+          repository: my-org/my-config-repo
+          token: ${{ secrets.GITOPS_TOKEN }}
+      - name: Update Image Tag
+        run: |
+          sed -i "s/tag: .*/tag: ${{ github.sha }}/" k8s/values.yaml
+          git config user.name "CI Bot"
+          git config user.email "ci@example.com"
+          git commit -am "Update image to ${{ github.sha }}"
+          git push

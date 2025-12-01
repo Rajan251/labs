@@ -1,0 +1,8 @@
+// my-app-repo/Jenkinsfile
+@Library('jenkins-shared-lib') _
+
+ciPipeline(
+    type: 'maven',
+    registry: 'registry.mycompany.com',
+    dockerBuild: true
+)

@@ -1,0 +1,129 @@
+# ============================================================================
+# KUBERNETES DEPLOYMENT MANIFEST - DEV ENVIRONMENT
+# ============================================================================
+# File: argocd-gitops/manifests/dev/deployment.yaml
+# Purpose: Kubernetes deployment for development environment
+# ============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: dev
+  labels:
+    app: my-app
+    environment: dev
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+        environment: dev
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: my-app
+        # This will be updated by Jenkins pipeline
+        image: artifactory.company.com/docker-local/my-app:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        
+        # Environment variables
+        env:
+        - name: NODE_ENV
+          value: "development"
+        - name: LOG_LEVEL
+          value: "debug"
+        
+        # Resource limits
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        
+        # Liveness probe
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Readiness probe
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
+      # Image pull secrets for Artifactory
+      imagePullSecrets:
+      - name: artifactory-secret
+
+---
+# ============================================================================
+# KUBERNETES SERVICE MANIFEST
+# ============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app
+  namespace: dev
+  labels:
+    app: my-app
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: my-app
+
+---
+# ============================================================================
+# KUBERNETES INGRESS MANIFEST
+# ============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-app
+  namespace: dev
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - my-app.dev.company.com
+    secretName: my-app-tls
+  rules:
+  - host: my-app.dev.company.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-app
+            port:
+              number: 80

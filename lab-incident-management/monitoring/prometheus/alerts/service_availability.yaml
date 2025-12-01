@@ -1,0 +1,111 @@
+# Service Availability Alert Rules
+# Alerts for service uptime and health checks
+
+groups:
+  - name: service_availability
+    interval: 30s
+    rules:
+      # Critical: Service completely down
+      - alert: ServiceDown
+        expr: up{job!~"node-exporter|cadvisor|blackbox"} == 0
+        for: 2m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} ({{ $labels.instance }}) has been down for more than 2 minutes."
+          impact: "Service unavailable to all users"
+          runbook_url: "https://runbooks.example.com/service-down"
+          dashboard_url: "http://localhost:3000/d/service-overview"
+
+      # Warning: Service flapping (intermittent failures)
+      - alert: ServiceFlapping
+        expr: changes(up{job!~"node-exporter|cadvisor|blackbox"}[10m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.job }} is flapping"
+          description: "Service {{ $labels.job }} has restarted {{ $value }} times in the last 10 minutes."
+          impact: "Service instability, potential user impact"
+          runbook_url: "https://runbooks.example.com/service-flapping"
+
+      # Critical: Multiple services down
+      - alert: MultipleServicesDown
+        expr: count(up{job!~"node-exporter|cadvisor|blackbox"} == 0) > 2
+        for: 1m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Multiple services are down"
+          description: "{{ $value }} services are currently down. Potential infrastructure issue."
+          impact: "Multiple service outage - possible cluster/network issue"
+          runbook_url: "https://runbooks.example.com/multiple-services-down"
+
+      # Warning: Low availability (SLO breach warning)
+      - alert: ServiceAvailabilityLow
+        expr: avg_over_time(up[5m]) < 0.95
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.job }} availability below 95%"
+          description: "Service {{ $labels.job }} has {{ $value | humanizePercentage }} availability over the last 5 minutes."
+          impact: "Approaching SLO breach"
+          runbook_url: "https://runbooks.example.com/low-availability"
+
+      # Critical: Blackbox probe failing
+      - alert: EndpointDown
+        expr: probe_success{job="blackbox"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} is down"
+          description: "HTTP probe to {{ $labels.instance }} has been failing for more than 2 minutes."
+          impact: "Endpoint unreachable"
+          runbook_url: "https://runbooks.example.com/endpoint-down"
+
+      # Warning: Slow endpoint response
+      - alert: EndpointSlow
+        expr: probe_duration_seconds{job="blackbox"} > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Endpoint {{ $labels.instance }} is slow"
+          description: "HTTP probe to {{ $labels.instance }} is taking {{ $value }}s to respond."
+          impact: "Degraded performance"
+          runbook_url: "https://runbooks.example.com/endpoint-slow"
+
+      # Critical: SSL certificate expiring soon
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox"} - time() < 86400 * 7
+        for: 1h
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "SSL certificate for {{ $labels.instance }} expiring soon"
+          description: "SSL certificate for {{ $labels.instance }} will expire in {{ $value | humanizeDuration }}."
+          impact: "Service will become inaccessible when certificate expires"
+          runbook_url: "https://runbooks.example.com/ssl-expiry"
+
+      # Warning: SSL certificate expiring in 30 days
+      - alert: SSLCertificateExpiring
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox"} - time() < 86400 * 30
+        for: 6h
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "SSL certificate for {{ $labels.instance }} expiring in 30 days"
+          description: "SSL certificate for {{ $labels.instance }} will expire in {{ $value | humanizeDuration }}."
+          impact: "Certificate renewal required"
+          runbook_url: "https://runbooks.example.com/ssl-expiry"

@@ -1,0 +1,166 @@
+# Prometheus Recording Rules
+# Pre-computed metrics for efficiency and reusability
+
+groups:
+  # HTTP Request Rate and Error Rate
+  - name: http_metrics
+    interval: 30s
+    rules:
+      # Total request rate per service
+      - record: job:http_requests:rate5m
+        expr: sum(rate(http_requests_total[5m])) by (job, service)
+      
+      # Error rate per service (5xx errors)
+      - record: job:http_requests_errors:rate5m
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) by (job, service)
+      
+      # Error ratio (percentage)
+      - record: job:http_requests_errors:ratio
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (job, service)
+          /
+          sum(rate(http_requests_total[5m])) by (job, service)
+      
+      # Success rate (non-5xx)
+      - record: job:http_requests_success:ratio
+        expr: |
+          sum(rate(http_requests_total{status!~"5.."}[5m])) by (job, service)
+          /
+          sum(rate(http_requests_total[5m])) by (job, service)
+
+  # Latency Percentiles
+  - name: latency_metrics
+    interval: 30s
+    rules:
+      # P50 latency per service
+      - record: job:http_request_duration:p50
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, service, le)
+          )
+      
+      # P95 latency per service
+      - record: job:http_request_duration:p95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, service, le)
+          )
+      
+      # P99 latency per service
+      - record: job:http_request_duration:p99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, service, le)
+          )
+
+  # Availability Metrics
+  - name: availability_metrics
+    interval: 30s
+    rules:
+      # Service availability (up/down)
+      - record: job:up:avg
+        expr: avg(up) by (job, service)
+      
+      # Availability percentage over 5m
+      - record: job:availability:ratio5m
+        expr: avg_over_time(up[5m])
+
+  # Resource Utilization
+  - name: resource_metrics
+    interval: 30s
+    rules:
+      # CPU usage percentage
+      - record: instance:cpu_usage:percent
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+      
+      # Memory usage percentage
+      - record: instance:memory_usage:percent
+        expr: |
+          100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+      
+      # Disk usage percentage
+      - record: instance:disk_usage:percent
+        expr: |
+          100 * (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}))
+
+  # Container Metrics
+  - name: container_metrics
+    interval: 30s
+    rules:
+      # Container CPU usage
+      - record: container:cpu_usage:rate
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total{container!=""}[5m])) by (container, pod)
+      
+      # Container memory usage
+      - record: container:memory_usage:bytes
+        expr: |
+          sum(container_memory_usage_bytes{container!=""}) by (container, pod)
+      
+      # Container restart count
+      - record: container:restarts:total
+        expr: |
+          sum(kube_pod_container_status_restarts_total) by (container, pod, namespace)
+
+  # Database Metrics
+  - name: database_metrics
+    interval: 30s
+    rules:
+      # PostgreSQL connection usage
+      - record: postgres:connections:ratio
+        expr: |
+          pg_stat_database_numbackends / pg_settings_max_connections
+      
+      # PostgreSQL query rate
+      - record: postgres:queries:rate5m
+        expr: |
+          rate(pg_stat_database_xact_commit[5m]) + rate(pg_stat_database_xact_rollback[5m])
+      
+      # Redis memory usage
+      - record: redis:memory_usage:ratio
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes
+
+  # SLO Burn Rate (for error budget alerts)
+  - name: slo_burn_rate
+    interval: 30s
+    rules:
+      # Fast burn rate (1 hour window)
+      - record: slo:error_budget_burn_rate:1h
+        expr: |
+          (1 - job:http_requests_success:ratio) / (1 - 0.999)
+      
+      # Slow burn rate (6 hour window)
+      - record: slo:error_budget_burn_rate:6h
+        expr: |
+          (1 - avg_over_time(job:http_requests_success:ratio[6h])) / (1 - 0.999)
+      
+      # Daily burn rate
+      - record: slo:error_budget_burn_rate:1d
+        expr: |
+          (1 - avg_over_time(job:http_requests_success:ratio[1d])) / (1 - 0.999)
+
+  # Incident Metrics (will be populated by incident-api)
+  - name: incident_metrics
+    interval: 60s
+    rules:
+      # Active incidents count
+      - record: incidents:active:count
+        expr: |
+          sum(incident_status{status!="resolved"}) by (severity)
+      
+      # Incidents created per hour
+      - record: incidents:created:rate1h
+        expr: |
+          sum(rate(incident_created_total[1h])) by (severity, service)
+      
+      # Mean time to acknowledge (MTTA)
+      - record: incidents:mtta:avg
+        expr: |
+          avg(incident_acknowledged_at - incident_created_at) by (severity)
+      
+      # Mean time to resolve (MTTR)
+      - record: incidents:mttr:avg
+        expr: |
+          avg(incident_resolved_at - incident_created_at) by (severity)

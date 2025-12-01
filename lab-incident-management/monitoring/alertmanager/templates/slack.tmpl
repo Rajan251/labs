@@ -1,0 +1,32 @@
+{{ define "slack.default.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }}
+{{ end }}
+
+{{ define "slack.default.text" }}
+{{ range .Alerts }}
+*Alert:* {{ .Labels.alertname }} - `{{ .Labels.severity }}`
+*Summary:* {{ .Annotations.summary }}
+*Description:* {{ .Annotations.description }}
+{{- if .Annotations.impact }}
+*Impact:* {{ .Annotations.impact }}
+{{- end }}
+*Service:* {{ .Labels.service }}
+*Team:* {{ .Labels.team }}
+{{- if .Annotations.runbook_url }}
+*Runbook:* <{{ .Annotations.runbook_url }}|View Runbook>
+{{- end }}
+{{- if .Annotations.dashboard_url }}
+*Dashboard:* <{{ .Annotations.dashboard_url }}|View Dashboard>
+{{- end }}
+*Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+{{- if .EndsAt }}
+*Ended:* {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}
+{{- end }}
+{{ end }}
+{{ end }}
+
+{{ define "slack.default.color" }}
+{{ if eq .Status "firing" }}
+  {{ if eq .CommonLabels.severity "page" }}danger{{ else if eq .CommonLabels.severity "critical" }}danger{{ else if eq .CommonLabels.severity "warning" }}warning{{ else }}#439FE0{{ end }}
+{{ else }}good{{ end }}
+{{ end }}

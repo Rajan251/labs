@@ -1,0 +1,249 @@
+# Infrastructure Alert Rules
+# Alerts for nodes, containers, and cluster resources
+
+groups:
+  - name: infrastructure_node
+    interval: 30s
+    rules:
+      # Critical: Node down
+      - alert: NodeDown
+        expr: up{job="node-exporter"} == 0
+        for: 3m
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "Node {{ $labels.instance }} is down"
+          description: "Node exporter on {{ $labels.instance }} has been down for more than 3 minutes."
+          impact: "Node unavailable - potential service impact"
+          runbook_url: "https://runbooks.example.com/node-down"
+
+      # Critical: High CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} CPU usage is {{ $value | humanize }}%."
+          impact: "Performance degradation possible"
+          runbook_url: "https://runbooks.example.com/high-cpu"
+
+      # Critical: Very high CPU usage
+      - alert: CriticalCPUUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} CPU usage is {{ $value | humanize }}%."
+          impact: "Severe performance degradation"
+          runbook_url: "https://runbooks.example.com/critical-cpu"
+
+      # Critical: High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} memory usage is {{ $value | humanize }}%."
+          impact: "Memory pressure - possible OOM kills"
+          runbook_url: "https://runbooks.example.com/high-memory"
+
+      # Critical: Very high memory usage
+      - alert: CriticalMemoryUsage
+        expr: |
+          100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 95
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} memory usage is {{ $value | humanize }}%."
+          impact: "OOM kills imminent"
+          runbook_url: "https://runbooks.example.com/critical-memory"
+
+      # Critical: Disk space low
+      - alert: DiskSpaceLow
+        expr: |
+          100 * (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} disk usage is {{ $value | humanize }}%."
+          impact: "Disk space running low"
+          runbook_url: "https://runbooks.example.com/disk-space-low"
+
+      # Critical: Disk space critical
+      - alert: DiskSpaceCritical
+        expr: |
+          100 * (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) > 90
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical disk space on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} disk usage is {{ $value | humanize }}%."
+          impact: "Disk full imminent - service failures possible"
+          runbook_url: "https://runbooks.example.com/disk-space-critical"
+
+      # Warning: High disk I/O
+      - alert: HighDiskIO
+        expr: |
+          rate(node_disk_io_time_seconds_total[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High disk I/O on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} disk I/O utilization is {{ $value | humanizePercentage }}."
+          impact: "Disk I/O saturation - performance impact"
+          runbook_url: "https://runbooks.example.com/high-disk-io"
+
+      # Warning: High network traffic
+      - alert: HighNetworkTraffic
+        expr: |
+          rate(node_network_receive_bytes_total[5m]) > 100000000
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High network traffic on {{ $labels.instance }}"
+          description: "Node {{ $labels.instance }} is receiving {{ $value | humanize }}B/s."
+          impact: "High network utilization"
+          runbook_url: "https://runbooks.example.com/high-network"
+
+  - name: infrastructure_container
+    interval: 30s
+    rules:
+      # Critical: Container down
+      - alert: ContainerDown
+        expr: |
+          time() - container_last_seen{container!=""} > 60
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Container {{ $labels.container }} is down"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} has been down for more than 2 minutes."
+          impact: "Container unavailable"
+          runbook_url: "https://runbooks.example.com/container-down"
+
+      # Critical: Pod crash loop
+      - alert: PodCrashLooping
+        expr: |
+          rate(kube_pod_container_status_restarts_total[15m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash looping"
+          description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is restarting frequently."
+          impact: "Service instability"
+          runbook_url: "https://runbooks.example.com/pod-crashloop"
+
+      # Warning: Container high CPU
+      - alert: ContainerHighCPU
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total{container!=""}[5m])) by (container, pod) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Container {{ $labels.container }} high CPU"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is using {{ $value }} CPU cores."
+          impact: "Container CPU throttling possible"
+          runbook_url: "https://runbooks.example.com/container-high-cpu"
+
+      # Warning: Container high memory
+      - alert: ContainerHighMemory
+        expr: |
+          sum(container_memory_usage_bytes{container!=""}) by (container, pod) > 1000000000
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Container {{ $labels.container }} high memory"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is using {{ $value | humanize }}B memory."
+          impact: "Container memory pressure"
+          runbook_url: "https://runbooks.example.com/container-high-memory"
+
+      # Critical: Container OOM killed
+      - alert: ContainerOOMKilled
+        expr: |
+          kube_pod_container_status_terminated_reason{reason="OOMKilled"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Container {{ $labels.container }} OOM killed"
+          description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was killed due to out of memory."
+          impact: "Container terminated - increase memory limits"
+          runbook_url: "https://runbooks.example.com/container-oom"
+
+  - name: infrastructure_cluster
+    interval: 30s
+    rules:
+      # Critical: Too many pods pending
+      - alert: TooManyPodsPending
+        expr: |
+          sum(kube_pod_status_phase{phase="Pending"}) > 5
+        for: 10m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Too many pods pending"
+          description: "{{ $value }} pods are in Pending state for more than 10 minutes."
+          impact: "Cluster resource shortage or scheduling issues"
+          runbook_url: "https://runbooks.example.com/pods-pending"
+
+      # Warning: Node not ready
+      - alert: NodeNotReady
+        expr: |
+          kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Node {{ $labels.node }} not ready"
+          description: "Node {{ $labels.node }} has been in NotReady state for more than 5 minutes."
+          impact: "Node unavailable for scheduling"
+          runbook_url: "https://runbooks.example.com/node-not-ready"
+
+      # Critical: Deployment replicas mismatch
+      - alert: DeploymentReplicasMismatch
+        expr: |
+          kube_deployment_spec_replicas != kube_deployment_status_replicas_available
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Deployment {{ $labels.deployment }} replicas mismatch"
+          description: "Deployment {{ $labels.deployment }} has {{ $value }} replicas mismatch."
+          impact: "Deployment not at desired replica count"
+          runbook_url: "https://runbooks.example.com/deployment-replicas"

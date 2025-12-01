@@ -1,0 +1,138 @@
+# Latency Alert Rules
+# Alerts for response time and performance degradation
+
+groups:
+  - name: latency
+    interval: 30s
+    rules:
+      # Critical: P95 latency above threshold
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, service, le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High P95 latency on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} P95 latency is {{ $value }}s (threshold: 500ms)."
+          impact: "Degraded user experience"
+          runbook_url: "https://runbooks.example.com/high-latency"
+          dashboard_url: "http://localhost:3000/d/service-overview?var-service={{ $labels.service }}"
+
+      # Critical: P99 latency above threshold
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, service, le)
+          ) > 1.0
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High P99 latency on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} P99 latency is {{ $value }}s (threshold: 1s)."
+          impact: "Severe performance degradation for some users"
+          runbook_url: "https://runbooks.example.com/high-latency"
+
+      # Warning: P50 latency elevated
+      - alert: ElevatedLatencyP50
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (job, service, le)
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Elevated P50 latency on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} P50 latency is {{ $value }}s (threshold: 200ms)."
+          impact: "Performance degradation affecting median user"
+          runbook_url: "https://runbooks.example.com/elevated-latency"
+
+      # Critical: Latency spike (sudden increase)
+      - alert: LatencySpike
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (service, le)
+          )
+          /
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[1h] offset 1h)) by (service, le)
+          ) > 3
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Latency spike on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} P95 latency is {{ $value }}x higher than 1 hour ago."
+          impact: "Sudden performance degradation - investigate recent changes"
+          runbook_url: "https://runbooks.example.com/latency-spike"
+
+      # Warning: Specific endpoint slow
+      - alert: SlowEndpoint
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{path!=""}[5m])) by (service, path, le)
+          ) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Slow endpoint {{ $labels.service }}{{ $labels.path }}"
+          description: "Endpoint {{ $labels.path }} on {{ $labels.service }} has P95 latency of {{ $value }}s."
+          impact: "Specific endpoint experiencing slow response times"
+          runbook_url: "https://runbooks.example.com/slow-endpoint"
+
+      # Critical: Database query latency high
+      - alert: DatabaseQuerySlow
+        expr: |
+          rate(pg_stat_statements_mean_exec_time_seconds[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "Slow database queries on {{ $labels.instance }}"
+          description: "Database {{ $labels.instance }} average query time is {{ $value }}s."
+          impact: "Database performance degradation affecting all services"
+          runbook_url: "https://runbooks.example.com/database-slow"
+
+      # Warning: Cache latency high (Redis)
+      - alert: CacheLatencySlow
+        expr: |
+          redis_command_duration_seconds_sum / redis_command_duration_seconds_count > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High Redis latency on {{ $labels.instance }}"
+          description: "Redis {{ $labels.instance }} average command latency is {{ $value }}s."
+          impact: "Cache performance degradation"
+          runbook_url: "https://runbooks.example.com/redis-slow"
+
+      # Critical: SLO latency breach
+      - alert: LatencySLOBreach
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{le="0.5"}[5m])) by (service)
+            /
+            sum(rate(http_request_duration_seconds_count[5m])) by (service)
+          ) < 0.95
+        for: 10m
+        labels:
+          severity: page
+          team: sre
+        annotations:
+          summary: "Latency SLO breach on {{ $labels.service }}"
+          description: "Service {{ $labels.service }} has only {{ $value | humanizePercentage }} of requests under 500ms (SLO: 95%)."
+          impact: "SLO breach - latency target not met"
+          runbook_url: "https://runbooks.example.com/latency-slo-breach"
+          dashboard_url: "http://localhost:3000/d/slo-tracking?var-service={{ $labels.service }}"

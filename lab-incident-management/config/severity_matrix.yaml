@@ -1,0 +1,365 @@
+# Incident Severity Matrix
+# Defines incident classification, SLAs, and response expectations
+
+severity_levels:
+  P0:
+    name: Critical
+    description: Complete service outage or critical security breach
+    color: "#FF0000"
+    
+    criteria:
+      - Complete service unavailability for all users
+      - Data breach or security incident
+      - Payment processing completely down
+      - Multiple critical services affected
+    
+    examples:
+      - "Production database is down"
+      - "API gateway returning 100% errors"
+      - "Security vulnerability actively exploited"
+      - "Payment processing completely unavailable"
+    
+    response_sla:
+      acknowledge: 5 minutes
+      initial_response: 10 minutes
+      status_update_frequency: 15 minutes
+      resolution_target: 1 hour
+    
+    notification:
+      channels:
+        - pagerduty
+        - slack_critical
+        - email
+        - sms
+      escalation:
+        - level_1: on-call-engineer (immediate)
+        - level_2: engineering-manager (15 min)
+        - level_3: vp-engineering (30 min)
+    
+    required_actions:
+      - Immediate acknowledgment
+      - War room creation (Zoom/Slack huddle)
+      - Executive notification
+      - Customer communication within 30 minutes
+      - Postmortem required within 24 hours
+    
+    automation:
+      auto_create_war_room: true
+      auto_page_backup: true
+      auto_notify_executives: true
+
+  P1:
+    name: High
+    description: Significant service degradation affecting many users
+    color: "#FF6600"
+    
+    criteria:
+      - Major feature unavailable
+      - Significant performance degradation (>50% slower)
+      - Affecting >25% of users
+      - Critical workflow broken
+    
+    examples:
+      - "Login service latency >5 seconds"
+      - "Search functionality returning errors"
+      - "Dashboard not loading for 30% of users"
+      - "Background job processing stopped"
+    
+    response_sla:
+      acknowledge: 15 minutes
+      initial_response: 30 minutes
+      status_update_frequency: 30 minutes
+      resolution_target: 4 hours
+    
+    notification:
+      channels:
+        - pagerduty
+        - slack_critical
+        - email
+      escalation:
+        - level_1: on-call-engineer (immediate)
+        - level_2: team-lead (30 min)
+        - level_3: engineering-manager (1 hour)
+    
+    required_actions:
+      - Acknowledge within SLA
+      - Investigate and provide initial assessment
+      - Regular status updates
+      - Postmortem required within 48 hours
+    
+    automation:
+      auto_create_war_room: false
+      auto_page_backup: true
+      auto_notify_executives: false
+
+  P2:
+    name: Medium
+    description: Moderate service degradation or minor feature outage
+    color: "#FFCC00"
+    
+    criteria:
+      - Non-critical feature unavailable
+      - Performance degradation (<50% impact)
+      - Affecting <25% of users
+      - Workaround available
+    
+    examples:
+      - "Export to PDF feature broken"
+      - "Email notifications delayed by 15 minutes"
+      - "Dashboard loading slowly (2-3 seconds)"
+      - "Non-critical API endpoint returning errors"
+    
+    response_sla:
+      acknowledge: 30 minutes
+      initial_response: 1 hour
+      status_update_frequency: 2 hours
+      resolution_target: 1 business day
+    
+    notification:
+      channels:
+        - slack_alerts
+        - email
+      escalation:
+        - level_1: on-call-engineer (immediate)
+        - level_2: team-lead (2 hours)
+    
+    required_actions:
+      - Acknowledge and investigate
+      - Provide workaround if available
+      - Fix during business hours
+      - Postmortem optional (recommended for recurring issues)
+    
+    automation:
+      auto_create_war_room: false
+      auto_page_backup: false
+      auto_notify_executives: false
+
+  P3:
+    name: Low
+    description: Minor issue with minimal user impact
+    color: "#99CC00"
+    
+    criteria:
+      - Cosmetic issues
+      - Minor performance degradation
+      - Affecting <5% of users
+      - Easy workaround available
+    
+    examples:
+      - "UI alignment issue on one page"
+      - "Tooltip text incorrect"
+      - "Minor logging errors"
+      - "Non-critical background job failing"
+    
+    response_sla:
+      acknowledge: 4 hours
+      initial_response: 8 hours
+      status_update_frequency: daily
+      resolution_target: 1 week
+    
+    notification:
+      channels:
+        - slack_alerts
+      escalation:
+        - level_1: on-call-engineer (best effort)
+    
+    required_actions:
+      - Create ticket for tracking
+      - Fix in next sprint
+      - No postmortem required
+    
+    automation:
+      auto_create_war_room: false
+      auto_page_backup: false
+      auto_notify_executives: false
+
+  P4:
+    name: Informational
+    description: Feature request or minor enhancement
+    color: "#0099CC"
+    
+    criteria:
+      - Feature requests
+      - Documentation updates
+      - Nice-to-have improvements
+      - No user impact
+    
+    examples:
+      - "Add dark mode to settings page"
+      - "Update API documentation"
+      - "Improve error message clarity"
+    
+    response_sla:
+      acknowledge: best effort
+      initial_response: best effort
+      status_update_frequency: as needed
+      resolution_target: backlog
+    
+    notification:
+      channels:
+        - ticket_system
+      escalation: []
+    
+    required_actions:
+      - Add to backlog
+      - Prioritize in planning
+    
+    automation:
+      auto_create_war_room: false
+      auto_page_backup: false
+      auto_notify_executives: false
+
+# Severity Auto-Classification Rules
+auto_classification:
+  rules:
+    - condition: "error_rate > 50% AND affected_users > 1000"
+      severity: P0
+      reason: "High error rate affecting many users"
+    
+    - condition: "availability < 50%"
+      severity: P0
+      reason: "Service mostly unavailable"
+    
+    - condition: "error_rate > 10% AND affected_users > 100"
+      severity: P1
+      reason: "Significant error rate with notable user impact"
+    
+    - condition: "latency_p95 > 5000ms"
+      severity: P1
+      reason: "Severe performance degradation"
+    
+    - condition: "error_rate > 5%"
+      severity: P2
+      reason: "Elevated error rate"
+    
+    - condition: "latency_p95 > 2000ms"
+      severity: P2
+      reason: "Moderate performance degradation"
+    
+    - condition: "error_rate > 1%"
+      severity: P3
+      reason: "Minor error rate increase"
+
+# Escalation Policies
+escalation:
+  default_policy:
+    - delay: 0
+      notify: on-call-primary
+    - delay: 15m
+      notify: on-call-secondary
+    - delay: 30m
+      notify: team-lead
+    - delay: 1h
+      notify: engineering-manager
+  
+  payment_service_policy:  # Higher priority for payment service
+    - delay: 0
+      notify: on-call-primary
+    - delay: 5m
+      notify: on-call-secondary
+    - delay: 10m
+      notify: team-lead
+    - delay: 20m
+      notify: engineering-manager
+    - delay: 30m
+      notify: vp-engineering
+
+# Communication Templates
+communication_templates:
+  P0:
+    customer_notification: |
+      We are currently experiencing a service outage affecting {service_name}.
+      Our team is actively working to resolve this issue.
+      
+      Impact: {impact_description}
+      Started: {incident_start_time}
+      Status: {current_status}
+      
+      We will provide updates every 15 minutes.
+    
+    internal_notification: |
+      🚨 P0 INCIDENT - {incident_title}
+      
+      Service: {service_name}
+      Impact: {impact_description}
+      Started: {incident_start_time}
+      
+      War Room: {war_room_link}
+      Incident: {incident_link}
+      
+      @here - All hands on deck!
+  
+  P1:
+    internal_notification: |
+      ⚠️ P1 INCIDENT - {incident_title}
+      
+      Service: {service_name}
+      Impact: {impact_description}
+      Started: {incident_start_time}
+      
+      Incident: {incident_link}
+      Owner: {incident_owner}
+
+# Incident Lifecycle States
+lifecycle_states:
+  - state: open
+    description: Incident created, not yet acknowledged
+    allowed_transitions: [acknowledged, resolved]
+  
+  - state: acknowledged
+    description: On-call engineer has acknowledged
+    allowed_transitions: [investigating, resolved]
+  
+  - state: investigating
+    description: Actively investigating root cause
+    allowed_transitions: [identified, resolved]
+  
+  - state: identified
+    description: Root cause identified, working on fix
+    allowed_transitions: [mitigating, resolved]
+  
+  - state: mitigating
+    description: Applying mitigation/fix
+    allowed_transitions: [monitoring, resolved]
+  
+  - state: monitoring
+    description: Fix applied, monitoring for stability
+    allowed_transitions: [resolved, investigating]
+  
+  - state: resolved
+    description: Incident fully resolved
+    allowed_transitions: [closed]
+  
+  - state: closed
+    description: Postmortem completed, incident closed
+    allowed_transitions: []
+
+# Metrics & KPIs
+metrics:
+  mttd:  # Mean Time to Detect
+    target:
+      P0: 2 minutes
+      P1: 5 minutes
+      P2: 15 minutes
+  
+  mtta:  # Mean Time to Acknowledge
+    target:
+      P0: 5 minutes
+      P1: 15 minutes
+      P2: 30 minutes
+  
+  mttr:  # Mean Time to Resolve
+    target:
+      P0: 1 hour
+      P1: 4 hours
+      P2: 1 day
+  
+  false_positive_rate:
+    target: "<5 per week"
+  
+  postmortem_completion:
+    target: "100% within SLA"
+    sla:
+      P0: 24 hours
+      P1: 48 hours
+      P2: optional

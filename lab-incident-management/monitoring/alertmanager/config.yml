@@ -1,0 +1,191 @@
+# Alertmanager Configuration
+# Routes alerts to appropriate notification channels
+
+global:
+  resolve_timeout: 5m
+  slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+# Templates for custom notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Main routing tree
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s          # Wait before sending first notification
+  group_interval: 5m       # Wait before sending batch of new alerts
+  repeat_interval: 4h      # Wait before resending notification
+  
+  routes:
+    # Page on-call for critical alerts
+    - match:
+        severity: page
+      receiver: pagerduty
+      continue: true        # Also send to other receivers
+      group_wait: 0s        # Send immediately
+      repeat_interval: 5m
+    
+    # Critical alerts to Slack critical channel
+    - match:
+        severity: critical
+      receiver: slack-critical
+      continue: true
+    
+    # Warning alerts to Slack warnings channel
+    - match:
+        severity: warning
+      receiver: slack-warnings
+    
+    # Database team alerts
+    - match:
+        team: database
+      receiver: slack-database
+      continue: true
+    
+    # Platform team alerts
+    - match:
+        team: platform
+      receiver: slack-platform
+      continue: true
+    
+    # Backend team alerts
+    - match:
+        team: backend
+      receiver: slack-backend
+      continue: true
+
+# Inhibition rules - suppress alerts when other alerts are firing
+inhibit_rules:
+  # Inhibit all alerts for a service if the service is down
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '(HighErrorRate|HighLatency|.*)'
+    equal: ['service']
+  
+  # Inhibit node alerts if node is down
+  - source_match:
+      alertname: 'NodeDown'
+    target_match_re:
+      alertname: '(HighCPUUsage|HighMemoryUsage|DiskSpaceLow|.*)'
+    equal: ['instance']
+  
+  # Inhibit warning if critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'service']
+  
+  # Inhibit specific endpoint errors if overall error rate is high
+  - source_match:
+      alertname: 'HighErrorRate'
+    target_match:
+      alertname: 'EndpointErrors'
+    equal: ['service']
+
+# Receivers - notification destinations
+receivers:
+  # Default receiver (catch-all)
+  - name: 'default'
+    slack_configs:
+      - channel: '#alerts'
+        title: '{{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  # PagerDuty for critical incidents
+  - name: 'pagerduty'
+    pagerduty_configs:
+      - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+        description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        details:
+          firing: '{{ .Alerts.Firing | len }}'
+          resolved: '{{ .Alerts.Resolved | len }}'
+          service: '{{ .GroupLabels.service }}'
+          severity: '{{ .GroupLabels.severity }}'
+          runbook: '{{ .CommonAnnotations.runbook_url }}'
+        client: 'Prometheus Alertmanager'
+        client_url: 'http://localhost:9093'
+    webhook_configs:
+      - url: 'http://incident-api:8000/api/v1/webhooks/alertmanager'
+        send_resolved: true
+
+  # Slack - Critical channel
+  - name: 'slack-critical'
+    slack_configs:
+      - channel: '#alerts-critical'
+        username: 'Alertmanager'
+        icon_emoji: ':rotating_light:'
+        title: '🚨 {{ .GroupLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Impact:* {{ .Annotations.impact }}
+          *Runbook:* {{ .Annotations.runbook_url }}
+          {{ end }}
+        send_resolved: true
+        actions:
+          - type: button
+            text: 'View Dashboard'
+            url: '{{ .CommonAnnotations.dashboard_url }}'
+          - type: button
+            text: 'View Runbook'
+            url: '{{ .CommonAnnotations.runbook_url }}'
+          - type: button
+            text: 'Silence'
+            url: 'http://localhost:9093/#/silences/new'
+
+  # Slack - Warnings channel
+  - name: 'slack-warnings'
+    slack_configs:
+      - channel: '#alerts-warnings'
+        username: 'Alertmanager'
+        icon_emoji: ':warning:'
+        title: '⚠️ {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  # Slack - Database team
+  - name: 'slack-database'
+    slack_configs:
+      - channel: '#database-alerts'
+        username: 'Alertmanager'
+        icon_emoji: ':database:'
+        title: '🗄️ {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  # Slack - Platform team
+  - name: 'slack-platform'
+    slack_configs:
+      - channel: '#platform-alerts'
+        username: 'Alertmanager'
+        icon_emoji: ':gear:'
+        title: '⚙️ {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  # Slack - Backend team
+  - name: 'slack-backend'
+    slack_configs:
+      - channel: '#backend-alerts'
+        username: 'Alertmanager'
+        icon_emoji: ':computer:'
+        title: '💻 {{ .GroupLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+
+  # Email fallback
+  - name: 'email'
+    email_configs:
+      - to: 'sre-team@example.com'
+        from: 'alertmanager@example.com'
+        smarthost: 'smtp.example.com:587'
+        auth_username: 'alertmanager@example.com'
+        auth_password: 'YOUR_EMAIL_PASSWORD'
+        headers:
+          Subject: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'

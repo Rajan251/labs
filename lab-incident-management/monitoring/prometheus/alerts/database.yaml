@@ -1,0 +1,217 @@
+# Database Alert Rules
+# Alerts for PostgreSQL and Redis
+
+groups:
+  - name: database_postgres
+    interval: 30s
+    rules:
+      # Critical: PostgreSQL down
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: page
+          team: database
+        annotations:
+          summary: "PostgreSQL {{ $labels.instance }} is down"
+          description: "PostgreSQL database {{ $labels.instance }} has been down for more than 2 minutes."
+          impact: "Database unavailable - all dependent services affected"
+          runbook_url: "https://runbooks.example.com/postgres-down"
+
+      # Critical: Too many connections
+      - alert: PostgreSQLTooManyConnections
+        expr: |
+          sum(pg_stat_database_numbackends) by (instance) / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "PostgreSQL {{ $labels.instance }} connection pool near limit"
+          description: "PostgreSQL {{ $labels.instance }} is using {{ $value | humanizePercentage }} of max connections."
+          impact: "Connection pool exhaustion imminent"
+          runbook_url: "https://runbooks.example.com/postgres-connections"
+
+      # Warning: High connection usage
+      - alert: PostgreSQLHighConnections
+        expr: |
+          sum(pg_stat_database_numbackends) by (instance) / pg_settings_max_connections > 0.6
+        for: 10m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "PostgreSQL {{ $labels.instance }} high connection usage"
+          description: "PostgreSQL {{ $labels.instance }} is using {{ $value | humanizePercentage }} of max connections."
+          impact: "Connection pool usage elevated"
+          runbook_url: "https://runbooks.example.com/postgres-connections"
+
+      # Critical: Replication lag
+      - alert: PostgreSQLReplicationLag
+        expr: |
+          pg_replication_lag > 30
+        for: 5m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "PostgreSQL replication lag on {{ $labels.instance }}"
+          description: "PostgreSQL replica {{ $labels.instance }} is {{ $value }}s behind primary."
+          impact: "Stale reads from replica"
+          runbook_url: "https://runbooks.example.com/postgres-replication-lag"
+
+      # Warning: Slow queries
+      - alert: PostgreSQLSlowQueries
+        expr: |
+          rate(pg_stat_statements_mean_exec_time_seconds[5m]) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "Slow queries on PostgreSQL {{ $labels.instance }}"
+          description: "PostgreSQL {{ $labels.instance }} average query time is {{ $value }}s."
+          impact: "Database performance degradation"
+          runbook_url: "https://runbooks.example.com/postgres-slow-queries"
+
+      # Critical: Deadlocks detected
+      - alert: PostgreSQLDeadlocks
+        expr: |
+          rate(pg_stat_database_deadlocks[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "Deadlocks detected on PostgreSQL {{ $labels.instance }}"
+          description: "PostgreSQL {{ $labels.instance }} is experiencing {{ $value }} deadlocks per second."
+          impact: "Transaction failures due to deadlocks"
+          runbook_url: "https://runbooks.example.com/postgres-deadlocks"
+
+      # Warning: High rollback rate
+      - alert: PostgreSQLHighRollbackRate
+        expr: |
+          rate(pg_stat_database_xact_rollback[5m]) / rate(pg_stat_database_xact_commit[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "High rollback rate on PostgreSQL {{ $labels.instance }}"
+          description: "PostgreSQL {{ $labels.instance }} has {{ $value | humanizePercentage }} rollback rate."
+          impact: "High transaction failure rate"
+          runbook_url: "https://runbooks.example.com/postgres-rollbacks"
+
+      # Critical: Database size growing rapidly
+      - alert: PostgreSQLDatabaseSizeGrowth
+        expr: |
+          rate(pg_database_size_bytes[1h]) > 1000000000
+        for: 1h
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "Rapid database growth on {{ $labels.instance }}"
+          description: "Database {{ $labels.datname }} on {{ $labels.instance }} is growing at {{ $value | humanize }}B/s."
+          impact: "Disk space may be exhausted"
+          runbook_url: "https://runbooks.example.com/postgres-growth"
+
+  - name: database_redis
+    interval: 30s
+    rules:
+      # Critical: Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis {{ $labels.instance }} is down"
+          description: "Redis instance {{ $labels.instance }} has been down for more than 2 minutes."
+          impact: "Cache unavailable - performance degradation"
+          runbook_url: "https://runbooks.example.com/redis-down"
+
+      # Critical: Redis memory high
+      - alert: RedisMemoryHigh
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis {{ $labels.instance }} memory usage high"
+          description: "Redis {{ $labels.instance }} is using {{ $value | humanizePercentage }} of max memory."
+          impact: "Redis eviction or OOM imminent"
+          runbook_url: "https://runbooks.example.com/redis-memory"
+
+      # Warning: Redis memory elevated
+      - alert: RedisMemoryElevated
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.7
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis {{ $labels.instance }} memory usage elevated"
+          description: "Redis {{ $labels.instance }} is using {{ $value | humanizePercentage }} of max memory."
+          impact: "Redis memory usage increasing"
+          runbook_url: "https://runbooks.example.com/redis-memory"
+
+      # Warning: High eviction rate
+      - alert: RedisHighEvictionRate
+        expr: |
+          rate(redis_evicted_keys_total[5m]) > 100
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High eviction rate on Redis {{ $labels.instance }}"
+          description: "Redis {{ $labels.instance }} is evicting {{ $value }} keys per second."
+          impact: "Cache effectiveness reduced"
+          runbook_url: "https://runbooks.example.com/redis-evictions"
+
+      # Critical: Redis replication broken
+      - alert: RedisReplicationBroken
+        expr: |
+          redis_connected_slaves == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis replication broken on {{ $labels.instance }}"
+          description: "Redis master {{ $labels.instance }} has no connected slaves."
+          impact: "No replication - data loss risk"
+          runbook_url: "https://runbooks.example.com/redis-replication"
+
+      # Warning: High rejected connections
+      - alert: RedisRejectedConnections
+        expr: |
+          rate(redis_rejected_connections_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Redis {{ $labels.instance }} rejecting connections"
+          description: "Redis {{ $labels.instance }} is rejecting {{ $value }} connections per second."
+          impact: "Connection limit reached"
+          runbook_url: "https://runbooks.example.com/redis-connections"
+
+      # Warning: Slow commands
+      - alert: RedisSlowCommands
+        expr: |
+          redis_command_duration_seconds_sum / redis_command_duration_seconds_count > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Slow Redis commands on {{ $labels.instance }}"
+          description: "Redis {{ $labels.instance }} average command latency is {{ $value }}s."
+          impact: "Cache performance degradation"
+          runbook_url: "https://runbooks.example.com/redis-slow"

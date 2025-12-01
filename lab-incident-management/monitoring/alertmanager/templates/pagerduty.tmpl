@@ -1,0 +1,15 @@
+{{ define "pagerduty.default.description" }}
+{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}
+{{ end }}
+
+{{ define "pagerduty.default.client" }}
+Prometheus Alertmanager
+{{ end }}
+
+{{ define "pagerduty.default.clientURL" }}
+{{ .ExternalURL }}
+{{ end }}
+
+{{ define "pagerduty.default.instances" }}
+{{ range .Alerts }}{{ .Labels.instance }} {{ end }}
+{{ end }}

@@ -1,0 +1,621 @@
+// ============================================================================
+// JENKINS DECLARATIVE PIPELINE - PYTHON TESTING
+// Production-Ready CI/CD Pipeline for FastAPI/Django Applications
+// ============================================================================
+
+pipeline {
+    agent any
+    
+    // ========================================================================
+    // ENVIRONMENT VARIABLES
+    // ========================================================================
+    environment {
+        // Python Configuration
+        PYTHON_VERSION = '3.11'
+        VENV_PATH = "${WORKSPACE}/venv"
+        
+        // Application Configuration
+        APP_NAME = 'python-app'
+        APP_PORT = '8000'
+        
+        // Database Configuration (for testing)
+        DB_HOST = 'localhost'
+        DB_PORT = '5432'
+        DB_NAME = 'testdb'
+        DB_USER = 'testuser'
+        DB_PASSWORD = credentials('db-password')
+        
+        // Docker Configuration
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_IMAGE = "${DOCKER_REGISTRY}/${APP_NAME}"
+        DOCKER_CREDENTIALS = credentials('docker-hub-credentials')
+        
+        // Testing Configuration
+        PYTEST_ARGS = '-v --cov=app --cov-report=xml --cov-report=html --cov-report=term-missing'
+        COVERAGE_THRESHOLD = '80'
+        
+        // Notification Configuration
+        SLACK_CHANNEL = '#ci-cd-notifications'
+        EMAIL_RECIPIENTS = 'team@example.com'
+        
+        // Deployment Configuration
+        STAGING_SERVER = credentials('staging-server')
+        PRODUCTION_SERVER = credentials('production-server')
+    }
+    
+    // ========================================================================
+    // BUILD PARAMETERS
+    // ========================================================================
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'staging', 'production'],
+            description: 'Target deployment environment'
+        )
+        booleanParam(
+            name: 'RUN_LOAD_TESTS',
+            defaultValue: false,
+            description: 'Run load tests with Locust'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip tests (NOT RECOMMENDED)'
+        )
+        string(
+            name: 'LOAD_TEST_USERS',
+            defaultValue: '100',
+            description: 'Number of concurrent users for load testing'
+        )
+        string(
+            name: 'LOAD_TEST_DURATION',
+            defaultValue: '5m',
+            description: 'Load test duration (e.g., 5m, 1h)'
+        )
+    }
+    
+    // ========================================================================
+    // BUILD TRIGGERS
+    // ========================================================================
+    triggers {
+        // Poll SCM every 5 minutes
+        pollSCM('H/5 * * * *')
+        
+        // Scheduled builds (nightly)
+        cron('H 2 * * *')
+    }
+    
+    // ========================================================================
+    // BUILD OPTIONS
+    // ========================================================================
+    options {
+        // Keep last 30 builds
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        
+        // Timeout after 1 hour
+        timeout(time: 1, unit: 'HOURS')
+        
+        // Disable concurrent builds
+        disableConcurrentBuilds()
+        
+        // Timestamps in console output
+        timestamps()
+        
+        // ANSI color output
+        ansiColor('xterm')
+    }
+    
+    // ========================================================================
+    // STAGES
+    // ========================================================================
+    stages {
+        
+        // ====================================================================
+        // STAGE 1: CHECKOUT
+        // ====================================================================
+        stage('Checkout') {
+            steps {
+                script {
+                    echo "🔄 Checking out code from repository..."
+                    checkout scm
+                    
+                    // Get commit information
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: "git rev-parse --short HEAD",
+                        returnStdout: true
+                    ).trim()
+                    
+                    env.GIT_BRANCH = sh(
+                        script: "git rev-parse --abbrev-ref HEAD",
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "📌 Branch: ${env.GIT_BRANCH}"
+                    echo "📌 Commit: ${env.GIT_COMMIT_SHORT}"
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 2: SETUP ENVIRONMENT
+        // ====================================================================
+        stage('Setup Environment') {
+            steps {
+                script {
+                    echo "🔧 Setting up Python virtual environment..."
+                    
+                    sh """
+                        # Remove old venv if exists
+                        rm -rf ${VENV_PATH}
+                        
+                        # Create new virtual environment
+                        python${PYTHON_VERSION} -m venv ${VENV_PATH}
+                        
+                        # Activate and upgrade pip
+                        . ${VENV_PATH}/bin/activate
+                        pip install --upgrade pip setuptools wheel
+                        
+                        # Install dependencies
+                        pip install -r requirements.txt
+                        
+                        # Display installed packages
+                        pip list
+                    """
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 3: CODE QUALITY CHECKS
+        // ====================================================================
+        stage('Code Quality') {
+            parallel {
+                stage('Black - Code Formatting') {
+                    steps {
+                        script {
+                            echo "🎨 Checking code formatting with Black..."
+                            sh """
+                                . ${VENV_PATH}/bin/activate
+                                black --check . || true
+                            """
+                        }
+                    }
+                }
+                
+                stage('Flake8 - Linting') {
+                    steps {
+                        script {
+                            echo "🔍 Running Flake8 linting..."
+                            sh """
+                                . ${VENV_PATH}/bin/activate
+                                flake8 . --count --statistics --output-file=flake8-report.txt || true
+                            """
+                        }
+                    }
+                }
+                
+                stage('MyPy - Type Checking') {
+                    steps {
+                        script {
+                            echo "📝 Running MyPy type checking..."
+                            sh """
+                                . ${VENV_PATH}/bin/activate
+                                mypy . --ignore-missing-imports --html-report mypy-report || true
+                            """
+                        }
+                    }
+                }
+                
+                stage('Pylint - Code Analysis') {
+                    steps {
+                        script {
+                            echo "🔬 Running Pylint code analysis..."
+                            sh """
+                                . ${VENV_PATH}/bin/activate
+                                pylint **/*.py --output-format=json > pylint-report.json || true
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 4: SECURITY SCANNING
+        // ====================================================================
+        stage('Security Scan') {
+            parallel {
+                stage('Bandit - Security Issues') {
+                    steps {
+                        script {
+                            echo "🔒 Running Bandit security scan..."
+                            sh """
+                                . ${VENV_PATH}/bin/activate
+                                bandit -r . -f json -o bandit-report.json || true
+                            """
+                        }
+                    }
+                }
+                
+                stage('Safety - Dependency Check') {
+                    steps {
+                        script {
+                            echo "🛡️ Checking dependencies for vulnerabilities..."
+                            sh """
+                                . ${VENV_PATH}/bin/activate
+                                safety check --json --output safety-report.json || true
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 5: UNIT TESTS
+        // ====================================================================
+        stage('Unit Tests') {
+            when {
+                expression { !params.SKIP_TESTS }
+            }
+            steps {
+                script {
+                    echo "🧪 Running unit tests..."
+                    sh """
+                        . ${VENV_PATH}/bin/activate
+                        
+                        # Run unit tests with coverage
+                        pytest -m unit ${PYTEST_ARGS} \
+                            --junitxml=junit-unit.xml \
+                            --html=report-unit.html \
+                            --self-contained-html
+                    """
+                }
+            }
+            post {
+                always {
+                    // Publish test results
+                    junit 'junit-unit.xml'
+                    
+                    // Publish HTML report
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'report-unit.html',
+                        reportName: 'Unit Test Report'
+                    ])
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 6: INTEGRATION TESTS
+        // ====================================================================
+        stage('Integration Tests') {
+            when {
+                expression { !params.SKIP_TESTS }
+            }
+            steps {
+                script {
+                    echo "🔗 Running integration tests..."
+                    
+                    // Start required services
+                    sh """
+                        # Start PostgreSQL (if using Docker)
+                        docker run -d --name postgres-test \
+                            -e POSTGRES_USER=${DB_USER} \
+                            -e POSTGRES_PASSWORD=${DB_PASSWORD} \
+                            -e POSTGRES_DB=${DB_NAME} \
+                            -p ${DB_PORT}:5432 \
+                            postgres:15 || true
+                        
+                        # Start Redis
+                        docker run -d --name redis-test \
+                            -p 6379:6379 \
+                            redis:7 || true
+                        
+                        # Wait for services to be ready
+                        sleep 10
+                    """
+                    
+                    // Run integration tests
+                    sh """
+                        . ${VENV_PATH}/bin/activate
+                        
+                        pytest -m integration ${PYTEST_ARGS} \
+                            --junitxml=junit-integration.xml \
+                            --html=report-integration.html \
+                            --self-contained-html
+                    """
+                }
+            }
+            post {
+                always {
+                    // Cleanup test services
+                    sh """
+                        docker stop postgres-test redis-test || true
+                        docker rm postgres-test redis-test || true
+                    """
+                    
+                    // Publish test results
+                    junit 'junit-integration.xml'
+                    
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'report-integration.html',
+                        reportName: 'Integration Test Report'
+                    ])
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 7: COVERAGE REPORT
+        // ====================================================================
+        stage('Coverage Report') {
+            when {
+                expression { !params.SKIP_TESTS }
+            }
+            steps {
+                script {
+                    echo "📊 Generating coverage report..."
+                    
+                    // Check coverage threshold
+                    sh """
+                        . ${VENV_PATH}/bin/activate
+                        
+                        # Generate coverage report
+                        coverage report
+                        
+                        # Check if coverage meets threshold
+                        coverage report --fail-under=${COVERAGE_THRESHOLD}
+                    """
+                }
+            }
+            post {
+                always {
+                    // Publish coverage report
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'htmlcov',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report'
+                    ])
+                    
+                    // Publish coverage to Cobertura
+                    step([$class: 'CoberturaPublisher',
+                        coberturaReportFile: 'coverage.xml',
+                        failUnhealthy: false,
+                        failUnstable: false,
+                        maxNumberOfBuilds: 10
+                    ])
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 8: LOAD TESTS (OPTIONAL)
+        // ====================================================================
+        stage('Load Tests') {
+            when {
+                expression { params.RUN_LOAD_TESTS }
+            }
+            steps {
+                script {
+                    echo "⚡ Running load tests with Locust..."
+                    
+                    // Start application
+                    sh """
+                        . ${VENV_PATH}/bin/activate
+                        
+                        # Start FastAPI application in background
+                        uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT} &
+                        APP_PID=\$!
+                        echo \$APP_PID > app.pid
+                        
+                        # Wait for app to start
+                        sleep 10
+                        
+                        # Run Locust load tests
+                        locust -f fastapi-tests/load_tests.py \
+                            --host=http://localhost:${APP_PORT} \
+                            --headless \
+                            --users ${params.LOAD_TEST_USERS} \
+                            --spawn-rate 10 \
+                            --run-time ${params.LOAD_TEST_DURATION} \
+                            --html=locust-report.html \
+                            --csv=locust-stats
+                        
+                        # Stop application
+                        kill \$(cat app.pid) || true
+                    """
+                }
+            }
+            post {
+                always {
+                    // Publish load test report
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'locust-report.html',
+                        reportName: 'Load Test Report'
+                    ])
+                    
+                    // Archive CSV stats
+                    archiveArtifacts artifacts: 'locust-stats*.csv', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 9: BUILD DOCKER IMAGE
+        // ====================================================================
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    echo "🐳 Building Docker image..."
+                    
+                    sh """
+                        docker build \
+                            -t ${DOCKER_IMAGE}:${env.GIT_COMMIT_SHORT} \
+                            -t ${DOCKER_IMAGE}:${env.GIT_BRANCH} \
+                            -t ${DOCKER_IMAGE}:latest \
+                            --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                            --build-arg VCS_REF=${env.GIT_COMMIT_SHORT} \
+                            .
+                    """
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 10: PUSH DOCKER IMAGE
+        // ====================================================================
+        stage('Push Docker Image') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                script {
+                    echo "📤 Pushing Docker image to registry..."
+                    
+                    sh """
+                        # Login to Docker registry
+                        echo ${DOCKER_CREDENTIALS_PSW} | docker login -u ${DOCKER_CREDENTIALS_USR} --password-stdin ${DOCKER_REGISTRY}
+                        
+                        # Push images
+                        docker push ${DOCKER_IMAGE}:${env.GIT_COMMIT_SHORT}
+                        docker push ${DOCKER_IMAGE}:${env.GIT_BRANCH}
+                        docker push ${DOCKER_IMAGE}:latest
+                    """
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 11: DEPLOY TO STAGING
+        // ====================================================================
+        stage('Deploy to Staging') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                script {
+                    echo "🚀 Deploying to staging environment..."
+                    
+                    sh """
+                        # Deploy using docker-compose or kubectl
+                        ssh ${STAGING_SERVER} "
+                            cd /opt/app &&
+                            docker-compose pull &&
+                            docker-compose up -d &&
+                            docker-compose ps
+                        "
+                    """
+                }
+            }
+        }
+        
+        // ====================================================================
+        // STAGE 12: DEPLOY TO PRODUCTION (MANUAL APPROVAL)
+        // ====================================================================
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    // Manual approval required
+                    input message: 'Deploy to Production?', ok: 'Deploy'
+                    
+                    echo "🚀 Deploying to production environment..."
+                    
+                    sh """
+                        # Deploy to production
+                        ssh ${PRODUCTION_SERVER} "
+                            cd /opt/app &&
+                            docker-compose pull &&
+                            docker-compose up -d &&
+                            docker-compose ps
+                        "
+                    """
+                }
+            }
+        }
+    }
+    
+    // ========================================================================
+    // POST-BUILD ACTIONS
+    // ========================================================================
+    post {
+        always {
+            echo "🧹 Cleaning up workspace..."
+            
+            // Archive artifacts
+            archiveArtifacts artifacts: '*-report.*', allowEmptyArchive: true
+            
+            // Clean up Docker images
+            sh """
+                docker image prune -f || true
+            """
+        }
+        
+        success {
+            echo "✅ Pipeline completed successfully!"
+            
+            // Send success notification
+            script {
+                if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'develop') {
+                    slackSend(
+                        channel: env.SLACK_CHANNEL,
+                        color: 'good',
+                        message: "✅ Build #${env.BUILD_NUMBER} succeeded for ${env.JOB_NAME}\nBranch: ${env.GIT_BRANCH}\nCommit: ${env.GIT_COMMIT_SHORT}"
+                    )
+                }
+            }
+        }
+        
+        failure {
+            echo "❌ Pipeline failed!"
+            
+            // Send failure notification
+            script {
+                slackSend(
+                    channel: env.SLACK_CHANNEL,
+                    color: 'danger',
+                    message: "❌ Build #${env.BUILD_NUMBER} failed for ${env.JOB_NAME}\nBranch: ${env.GIT_BRANCH}\nCommit: ${env.GIT_COMMIT_SHORT}"
+                )
+                
+                emailext(
+                    subject: "Jenkins Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                    body: "Build failed. Check console output at ${env.BUILD_URL}",
+                    to: env.EMAIL_RECIPIENTS
+                )
+            }
+        }
+        
+        unstable {
+            echo "⚠️ Pipeline is unstable!"
+            
+            script {
+                slackSend(
+                    channel: env.SLACK_CHANNEL,
+                    color: 'warning',
+                    message: "⚠️ Build #${env.BUILD_NUMBER} is unstable for ${env.JOB_NAME}\nBranch: ${env.GIT_BRANCH}"
+                )
+            }
+        }
+    }
+}

@@ -1,0 +1,266 @@
+# ============================================================================
+# GITLAB CI/CD PIPELINE FOR PYTHON TESTING
+# ============================================================================
+
+stages:
+  - lint
+  - test
+  - integration
+  - performance
+  - security
+  - build
+  - deploy
+
+variables:
+  PYTHON_VERSION: "3.11"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  POSTGRES_DB: testdb
+  POSTGRES_USER: testuser
+  POSTGRES_PASSWORD: testpass
+  DATABASE_URL: "postgresql://testuser:testpass@postgres:5432/testdb"
+
+# ============================================================================
+# CACHE CONFIGURATION
+# ============================================================================
+cache:
+  paths:
+    - .cache/pip
+    - venv/
+
+# ============================================================================
+# BEFORE SCRIPT
+# ============================================================================
+before_script:
+  - python -m venv venv
+  - source venv/bin/activate
+  - pip install --upgrade pip
+  - pip install -r requirements.txt
+
+# ============================================================================
+# LINTING JOBS
+# ============================================================================
+lint:black:
+  stage: lint
+  image: python:${PYTHON_VERSION}
+  script:
+    - pip install black
+    - black --check .
+  allow_failure: false
+
+lint:flake8:
+  stage: lint
+  image: python:${PYTHON_VERSION}
+  script:
+    - pip install flake8
+    - flake8 . --count --statistics
+  allow_failure: true
+
+lint:mypy:
+  stage: lint
+  image: python:${PYTHON_VERSION}
+  script:
+    - pip install mypy
+    - mypy . --ignore-missing-imports
+  allow_failure: true
+
+lint:pylint:
+  stage: lint
+  image: python:${PYTHON_VERSION}
+  script:
+    - pip install pylint
+    - pylint **/*.py --fail-under=7.0
+  allow_failure: true
+
+# ============================================================================
+# SECURITY JOBS
+# ============================================================================
+security:bandit:
+  stage: security
+  image: python:${PYTHON_VERSION}
+  script:
+    - pip install bandit
+    - bandit -r . -f json -o bandit-report.json
+  artifacts:
+    reports:
+      bandit: bandit-report.json
+    paths:
+      - bandit-report.json
+    expire_in: 1 week
+  allow_failure: true
+
+security:safety:
+  stage: security
+  image: python:${PYTHON_VERSION}
+  script:
+    - pip install safety
+    - safety check --json
+  allow_failure: true
+
+# ============================================================================
+# UNIT TEST JOBS
+# ============================================================================
+test:fastapi:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  services:
+    - postgres:15
+    - redis:7
+  variables:
+    POSTGRES_HOST_AUTH_METHOD: trust
+  script:
+    - pytest fastapi-tests/ -v --cov=app --cov-report=xml --cov-report=html --cov-report=term -m "not slow"
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - htmlcov/
+      - coverage.xml
+    expire_in: 1 week
+
+test:django:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  services:
+    - postgres:15
+    - redis:7
+  variables:
+    DJANGO_SETTINGS_MODULE: myproject.settings.test
+  script:
+    - pytest django-tests/ -v --cov=app --cov-report=xml --cov-report=html -m "not slow"
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - htmlcov/
+      - coverage.xml
+    expire_in: 1 week
+
+test:parallel:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  services:
+    - postgres:15
+    - redis:7
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.9", "3.10", "3.11", "3.12"]
+  script:
+    - pytest -v -n auto --cov=app --cov-report=xml
+
+# ============================================================================
+# INTEGRATION TEST JOBS
+# ============================================================================
+integration:api:
+  stage: integration
+  image: python:${PYTHON_VERSION}
+  services:
+    - postgres:15
+    - redis:7
+  script:
+    - pytest -v -m integration --cov=app --cov-report=xml
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+
+# ============================================================================
+# PERFORMANCE TEST JOBS
+# ============================================================================
+performance:load:
+  stage: performance
+  image: python:${PYTHON_VERSION}
+  services:
+    - postgres:15
+    - redis:7
+  script:
+    - pip install locust
+    - uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+    - sleep 5
+    - locust -f fastapi-tests/load_tests.py --host=http://localhost:8000 --headless -u 100 -r 10 -t 3m --html=locust-report.html
+  artifacts:
+    paths:
+      - locust-report.html
+    expire_in: 1 week
+  only:
+    - main
+  when: manual
+
+# ============================================================================
+# BUILD JOBS
+# ============================================================================
+build:docker:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker build -t $CI_REGISTRY_IMAGE:latest .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+  only:
+    - main
+    - develop
+
+# ============================================================================
+# DEPLOY JOBS
+# ============================================================================
+deploy:staging:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - echo "Deploying to staging environment"
+    - curl -X POST $STAGING_WEBHOOK_URL
+  environment:
+    name: staging
+    url: https://staging.example.com
+  only:
+    - develop
+  when: manual
+
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - echo "Deploying to production environment"
+    - curl -X POST $PRODUCTION_WEBHOOK_URL
+  environment:
+    name: production
+    url: https://example.com
+  only:
+    - main
+  when: manual
+
+# ============================================================================
+# PAGES (GitLab Pages for Coverage Reports)
+# ============================================================================
+pages:
+  stage: deploy
+  dependencies:
+    - test:fastapi
+    - test:django
+  script:
+    - mkdir -p public
+    - cp -r htmlcov/* public/
+  artifacts:
+    paths:
+      - public
+  only:
+    - main

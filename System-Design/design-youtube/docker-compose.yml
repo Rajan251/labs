@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # API Gateway
+  gateway:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - shared-media:/var/www/media
+    depends_on:
+      - video-service
+      - upload-service
+
+  # Video Metadata Service
+  video-service:
+    build: ./video-service
+    environment:
+      - MONGODB_URL=mongodb://mongo:27017
+      - DB_NAME=videodb
+    depends_on:
+      - mongo
+
+  # Upload Service
+  upload-service:
+    build: ./upload-service
+    volumes:
+      - shared-media:/var/www/media
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - MEDIA_ROOT=/var/www/media
+      - TRANSCODER_TASK_NAME=worker.transcode_video
+    depends_on:
+      - redis
+
+  # Transcoding Worker
+  transcoder-service:
+    build: ./transcoder-service
+    volumes:
+      - shared-media:/var/www/media
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - MEDIA_ROOT=/var/www/media
+      - VIDEO_SERVICE_URL=http://video-service:8000
+    depends_on:
+      - redis
+      - video-service
+
+  # Database
+  mongo:
+    image: mongo:6
+    volumes:
+      - mongo-data:/data/db
+
+  # Message Queue
+  redis:
+    image: redis:7
+
+volumes:
+  mongo-data:
+  shared-media:

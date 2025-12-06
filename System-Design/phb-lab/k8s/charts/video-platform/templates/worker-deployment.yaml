@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-worker
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-worker
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          env:
+            - name: DB_HOST
+              value: "{{ .Release.Name }}-postgres"
+            - name: RABBITMQ_URL
+              value: "amqp://user:password@{{ .Release.Name }}-rabbitmq:5672"
+            - name: MINIO_ENDPOINT
+              value: "{{ .Release.Name }}-minio:9000"

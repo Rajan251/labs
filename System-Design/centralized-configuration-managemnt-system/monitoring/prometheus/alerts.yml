@@ -1,0 +1,63 @@
+groups:
+  - name: config_service_alerts
+    interval: 30s
+    rules:
+      # Service availability
+      - alert: ConfigServiceDown
+        expr: up{job="config-service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Config service is down"
+          description: "Config service {{ $labels.instance }} has been down for more than 2 minutes."
+
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors/sec on {{ $labels.instance }}."
+
+      # Database connection issues
+      - alert: DatabaseConnectionPoolExhausted
+        expr: database_connection_pool_size - database_connection_pool_in_use < 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Only {{ $value }} connections available in the pool."
+
+      # Redis connection issues
+      - alert: RedisConnectionFailed
+        expr: redis_connection_errors_total > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis connection errors detected"
+          description: "{{ $value }} Redis connection errors in the last 5 minutes."
+
+      # High response time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }}s."
+
+      # Cache hit rate too low
+      - alert: LowCacheHitRate
+        expr: rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m])) < 0.5
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}."

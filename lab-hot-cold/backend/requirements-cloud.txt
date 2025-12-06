@@ -1,0 +1,12 @@
+# Cloud Storage Requirements
+# Install based on your cloud provider
+
+# For AWS S3 or MinIO
+boto3>=1.26.0
+botocore>=1.29.0
+
+# For Google Cloud Storage (optional)
+# google-cloud-storage>=2.10.0
+
+# For Azure Blob Storage (optional)
+# azure-storage-blob>=12.17.0

@@ -1,0 +1,9 @@
+{
+  "database.host": "localhost",
+  "database.port": 5432,
+  "database.name": "myapp_db",
+  "api.key": "fallback-api-key",
+  "features.new_ui": false,
+  "cache.ttl": 300,
+  "logging.level": "INFO"
+}

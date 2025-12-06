@@ -1,0 +1,159 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: webhook-postgres
+    environment:
+      POSTGRES_USER: webhook_user
+      POSTGRES_PASSWORD: webhook_pass
+      POSTGRES_DB: webhook_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webhook_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webhook-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: webhook-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webhook-network
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: webhook-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: webhook_user
+      RABBITMQ_DEFAULT_PASS: webhook_pass
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - webhook-network
+
+  # FastAPI Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webhook-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://webhook_user:webhook_pass@postgres:5432/webhook_db
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://webhook_user:webhook_pass@rabbitmq:5672/
+      CELERY_BROKER_URL: amqp://webhook_user:webhook_pass@rabbitmq:5672/
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - webhook-network
+
+  # Celery Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webhook-worker
+    command: celery -A app.workers.delivery_worker worker --loglevel=info --concurrency=4
+    environment:
+      DATABASE_URL: postgresql://webhook_user:webhook_pass@postgres:5432/webhook_db
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://webhook_user:webhook_pass@rabbitmq:5672/
+      CELERY_BROKER_URL: amqp://webhook_user:webhook_pass@rabbitmq:5672/
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LOG_LEVEL: INFO
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - webhook-network
+    deploy:
+      replicas: 2
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: webhook-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - webhook-network
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: webhook-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - webhook-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  webhook-network:
+    driver: bridge

@@ -1,0 +1,69 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    # API Service
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    - name: Install API Dependencies
+      run: cd api && npm install
+    - name: Build API
+      run: cd api && npm run build
+
+    # Security Scan (Trivy)
+    - name: Run Trivy vulnerability scanner (fs)
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        trivy-config: trivy.yaml
+        format: 'table'
+        exit-code: '1'
+        ignore-unfixed: true
+        severity: 'CRITICAL,HIGH'
+
+  docker-build-push:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Build and Push API
+      uses: docker/build-push-action@v4
+      with:
+        context: ./api
+        push: true
+        tags: user/video-api:latest
+        
+    - name: Build and Push Worker
+      uses: docker/build-push-action@v4
+      with:
+        context: ./worker
+        push: true
+        tags: user/video-worker:latest
+
+    - name: Build and Push Web
+      uses: docker/build-push-action@v4
+      with:
+        context: ./web
+        push: true
+        tags: user/video-web:latest

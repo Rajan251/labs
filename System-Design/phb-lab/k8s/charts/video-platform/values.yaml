@@ -1,0 +1,33 @@
+api:
+  replicaCount: 2
+  image:
+    repository: video-api
+    tag: latest
+  service:
+    port: 3000
+
+worker:
+  replicaCount: 1
+  image:
+    repository: video-worker
+    tag: latest
+
+web:
+  replicaCount: 2
+  image:
+    repository: video-web
+    tag: latest
+  service:
+    port: 80
+
+postgres:
+  enabled: true
+
+redis:
+  enabled: true
+
+rabbitmq:
+  enabled: true
+
+minio:
+  enabled: true

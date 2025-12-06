@@ -1,0 +1,5 @@
+django>=4.1,<5.0
+djongo
+gunicorn
+python-dotenv
+pymongo==3.12.3

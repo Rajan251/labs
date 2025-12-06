@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: video-platform-ingress
+  namespace: video-platform
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /api/videos
+        pathType: Prefix
+        backend:
+          service:
+            name: video-service
+            port:
+              number: 8000
+      - path: /api/upload
+        pathType: Prefix
+        backend:
+          service:
+            name: upload-service
+            port:
+              number: 8001

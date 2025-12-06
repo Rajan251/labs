@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transcoder-service
+  namespace: video-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transcoder-service
+  template:
+    metadata:
+      labels:
+        app: transcoder-service
+    spec:
+      containers:
+      - name: transcoder-service
+        image: transcoder-service:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: CELERY_BROKER_URL
+          value: "redis://redis:6379/0"
+        - name: MEDIA_ROOT
+          value: "/var/www/media"
+        - name: VIDEO_SERVICE_URL
+          value: "http://video-service:8000"
+        volumeMounts:
+        - name: shared-media
+          mountPath: "/var/www/media"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: shared-media
+        persistentVolumeClaim:
+          claimName: media-pvc

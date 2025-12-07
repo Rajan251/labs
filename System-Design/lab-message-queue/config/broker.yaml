@@ -1,0 +1,37 @@
+# Broker configuration
+broker_id: 1
+host: "0.0.0.0"
+port: 9092
+data_dir: "/var/lib/message-queue/data"
+
+# Network settings
+num_network_threads: 3
+num_io_threads: 8
+socket_send_buffer_bytes: 102400
+socket_receive_buffer_bytes: 102400
+max_request_size: 104857600  # 100MB
+
+# Replication settings
+replication_factor: 3
+min_insync_replicas: 2
+replica_lag_time_max_ms: 10000
+unclean_leader_election_enable: false
+
+# Log settings
+log_segment_bytes: 1073741824  # 1GB
+log_retention_hours: 168  # 7 days
+log_retention_bytes: -1  # No size limit
+log_cleanup_policy: "delete"  # or "compact"
+
+# Performance tuning
+num_replica_fetchers: 4
+replica_fetch_max_bytes: 1048576  # 1MB
+replica_fetch_wait_max_ms: 500
+
+# Quotas
+quota_producer_default: 10485760  # 10 MB/s
+quota_consumer_default: 20971520  # 20 MB/s
+
+# Monitoring
+metrics_enabled: true
+metrics_port: 9093

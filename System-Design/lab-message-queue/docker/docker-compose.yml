@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # Broker 1
+  broker-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mq-broker-1
+    hostname: broker-1
+    ports:
+      - "9092:9092"
+    environment:
+      - BROKER_ID=1
+      - BROKER_PORT=9092
+      - DATA_DIR=/data
+    volumes:
+      - broker-1-data:/data
+    networks:
+      - mq-network
+    command: python -m broker.broker 1 9092
+
+  # Broker 2
+  broker-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mq-broker-2
+    hostname: broker-2
+    ports:
+      - "9093:9092"
+    environment:
+      - BROKER_ID=2
+      - BROKER_PORT=9092
+      - DATA_DIR=/data
+    volumes:
+      - broker-2-data:/data
+    networks:
+      - mq-network
+    command: python -m broker.broker 2 9092
+
+  # Broker 3
+  broker-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mq-broker-3
+    hostname: broker-3
+    ports:
+      - "9094:9092"
+    environment:
+      - BROKER_ID=3
+      - BROKER_PORT=9092
+      - DATA_DIR=/data
+    volumes:
+      - broker-3-data:/data
+    networks:
+      - mq-network
+    command: python -m broker.broker 3 9092
+
+  # Example Producer
+  producer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mq-producer
+    depends_on:
+      - broker-1
+      - broker-2
+      - broker-3
+    networks:
+      - mq-network
+    command: python examples/simple_producer.py
+    restart: "no"
+
+  # Example Consumer
+  consumer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mq-consumer
+    depends_on:
+      - broker-1
+      - broker-2
+      - broker-3
+    networks:
+      - mq-network
+    command: python examples/simple_consumer.py
+    restart: "no"
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mq-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - mq-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mq-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - mq-network
+    depends_on:
+      - prometheus
+
+volumes:
+  broker-1-data:
+  broker-2-data:
+  broker-3-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  mq-network:
+    driver: bridge

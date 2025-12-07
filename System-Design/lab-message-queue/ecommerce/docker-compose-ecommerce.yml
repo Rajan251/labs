@@ -1,0 +1,227 @@
+version: '3.8'
+
+services:
+  # Databases
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schemas:/schemas
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  # Microservices
+  catalog-service:
+    build:
+      context: ./services/catalog
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://admin:password@postgres/ecommerce
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+    restart: unless-stopped
+
+  search-service:
+    build:
+      context: ./services/search
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000"
+    depends_on:
+      - elasticsearch
+      - rabbitmq
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+    restart: unless-stopped
+
+  cart-service:
+    build:
+      context: ./services/cart
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8000"
+    depends_on:
+      - redis
+    environment:
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+
+  order-service:
+    build:
+      context: ./services/order
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://admin:password@postgres/ecommerce
+      RABBITMQ_URL: amqp://admin:password@rabbitmq:5672
+      INVENTORY_SERVICE_URL: http://inventory-service:8000
+      PAYMENT_SERVICE_URL: http://payment-service:8000
+      PROMOTIONS_SERVICE_URL: http://promotions-service:8000
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ./services/payment
+      dockerfile: Dockerfile
+    ports:
+      - "8005:8000"
+    environment:
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+    restart: unless-stopped
+
+  inventory-service:
+    build:
+      context: ./services/inventory
+      dockerfile: Dockerfile
+    ports:
+      - "8006:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://admin:password@postgres/ecommerce
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+
+  promotions-service:
+    build:
+      context: ./services/promotions
+      dockerfile: Dockerfile
+    ports:
+      - "8007:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://admin:password@postgres/ecommerce
+    restart: unless-stopped
+
+  user-service:
+    build:
+      context: ./services/user
+      dockerfile: Dockerfile
+    ports:
+      - "8008:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://admin:password@postgres/ecommerce
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+    restart: unless-stopped
+
+  # API Gateway
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - catalog-service
+      - search-service
+      - cart-service
+      - order-service
+      - payment-service
+      - inventory-service
+      - promotions-service
+      - user-service
+    restart: unless-stopped
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  es_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+
+networks:
+  default:
+    name: ecommerce-network

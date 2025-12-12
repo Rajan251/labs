@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-worker
+  namespace: default
+  labels:
+    app: vllm-worker
+spec:
+  replicas: 0 # Scaled by KEDA
+  selector:
+    matchLabels:
+      app: vllm-worker
+  template:
+    metadata:
+      labels:
+        app: vllm-worker
+    spec:
+      nodeSelector:
+        karpenter.sh/capacity-type: spot
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+        - "--model"
+        - "meta-llama/Llama-2-7b-chat-hf"
+        - "--host"
+        - "0.0.0.0"
+        - "--port"
+        - "8000"
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: token
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: dshm
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: default
+spec:
+  selector:
+    app: vllm-worker
+  ports:
+  - port: 8000
+    targetPort: 8000

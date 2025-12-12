@@ -1,0 +1,21 @@
+# Kustomization for base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ecommerce
+
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - redis.yaml
+  - rabbitmq.yaml
+  - catalog-service.yaml
+  # Add other services as they're created
+  # - cart-service.yaml
+  # - order-service.yaml
+  # - payment-service.yaml
+  # - inventory-service.yaml
+  # - user-service.yaml
+  # - api-gateway.yaml
+  # - ingress.yaml

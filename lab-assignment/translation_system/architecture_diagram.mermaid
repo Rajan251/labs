@@ -1,0 +1,59 @@
+graph TB
+    subgraph AWS Cloud [AWS Region (us-west-2)]
+        
+        subgraph VPC [VPC (10.0.0.0/16)]
+            
+            subgraph Public_Subnet [Public Subnet]
+                ALB[Application Load Balancer]
+                NAT[NAT Gateway]
+            end
+            
+            subgraph Private_Subnet_App [Private Subnet (App Layer)]
+                API[API Gateway (FastAPI)]
+                KEDA[KEDA Autoscaler]
+            end
+            
+            subgraph Private_Subnet_Compute [Private Subnet (Compute Layer)]
+                subgraph Priority_Zone [AZ-1: Priority]
+                    W_Crit[Priority Worker (On-Demand)]
+                end
+                subgraph Standard_Zone [AZ-2: Standard]
+                    W_Std[Standard Worker (Spot)]
+                end
+            end
+            
+            subgraph Private_Subnet_Data [Private Subnet (Data Layer)]
+                Redis[(Redis Cluster)]
+            end
+        end
+        
+        S3[S3 Bucket (Documents)]
+        DynamoDB[(DynamoDB Metadata)]
+        
+    end
+    
+    Client[Client] -->|HTTPS/443| ALB
+    ALB -->|HTTP/80| API
+    
+    API -->|Auth & Validate| Redis
+    API -->|Upload| S3
+    API -->|Write State| DynamoDB
+    
+    W_Crit -->|Pull Job| Redis
+    W_Std -->|Pull Job| Redis
+    
+    W_Crit -->|Download| S3
+    W_Std -->|Download| S3
+    
+    W_Crit -->|Update State| DynamoDB
+    W_Std -->|Update State| DynamoDB
+    
+    NAT -.->|Internet Access| W_Std
+    
+    style AWS Cloud fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style VPC fill:#e1f5fe,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
+    style Public_Subnet fill:#e0f2f1,stroke:#333
+    style Private_Subnet_App fill:#fff3e0,stroke:#333
+    style Private_Subnet_Compute fill:#f3e5f5,stroke:#333
+    style W_Crit fill:#ffccbc,stroke:#ff5722,stroke-width:2px
+    style W_Std fill:#c8e6c9,stroke:#4caf50,stroke-width:2px

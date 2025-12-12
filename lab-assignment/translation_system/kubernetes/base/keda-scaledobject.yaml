@@ -1,0 +1,39 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: rabbitmq-scaledobject-priority
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: translation-worker-priority
+  minReplicaCount: 1 # Warm pool
+  maxReplicaCount: 5
+  pollingInterval: 5
+  cooldownPeriod: 300
+  triggers:
+  - type: rabbitmq
+    metadata:
+      queueName: translation_critical
+      mode: QueueLength
+      value: "1" # Scale up if ANY message is in queue
+      host: "amqp://guest:guest@rabbitmq.default.svc.cluster.local:5672"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: rabbitmq-scaledobject-standard
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: translation-worker-standard
+  minReplicaCount: 0 # Scale to zero
+  maxReplicaCount: 10
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+  - type: rabbitmq
+    metadata:
+      queueName: translation_standard
+      mode: QueueLength
+      value: "5" # Scale up if > 5 messages per replica
+      host: "amqp://guest:guest@rabbitmq.default.svc.cluster.local:5672"

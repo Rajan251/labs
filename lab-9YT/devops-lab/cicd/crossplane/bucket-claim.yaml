@@ -1,0 +1,10 @@
+apiVersion: storage.crossplane.io/v1alpha1
+kind: Bucket
+metadata:
+  name: my-bucket
+spec:
+  classReference:
+    name: standard-s3
+  writeConnectionSecretToRef:
+    name: my-bucket-creds
+    namespace: default

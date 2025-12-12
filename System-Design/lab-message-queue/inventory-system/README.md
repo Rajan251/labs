@@ -280,12 +280,20 @@ docker-compose up -d
 ### Kubernetes (Production)
 
 ```bash
-# Apply manifests
-kubectl apply -f k8s/
+# Deploy to development
+kubectl apply -k k8s/overlays/dev
+
+# Deploy to production
+kubectl apply -k k8s/overlays/prod
 
 # Check status
-kubectl get pods -l app=inventory-api
+kubectl get pods -n inventory-system
+
+# Access API
+kubectl port-forward svc/inventory-api-service 8000:80 -n inventory-system
 ```
+
+See [KUBERNETES_DEPLOYMENT.md](docs/KUBERNETES_DEPLOYMENT.md) for complete guide.
 
 ## Configuration
 

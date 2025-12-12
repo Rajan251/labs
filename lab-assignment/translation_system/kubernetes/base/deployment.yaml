@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: translation-worker-priority
+  labels:
+    app: translation-worker
+    tier: priority
+spec:
+  replicas: 1 # Controlled by KEDA
+  selector:
+    matchLabels:
+      app: translation-worker
+      tier: priority
+  template:
+    metadata:
+      labels:
+        app: translation-worker
+        tier: priority
+    spec:
+      tolerations:
+      - key: "tier"
+        operator: "Equal"
+        value: "priority"
+        effect: "NoSchedule"
+      nodeSelector:
+        tier: priority
+      containers:
+      - name: worker
+        image: translation-system:latest
+        env:
+        - name: QUEUE_NAME
+          value: "translation_critical"
+        - name: PRIORITY_MODE
+          value: "true"
+        resources:
+          limits:
+            nvidia.com/gpu: 4 # Request full node
+          requests:
+            nvidia.com/gpu: 4
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: translation-worker-standard
+  labels:
+    app: translation-worker
+    tier: standard
+spec:
+  replicas: 0 # Scaled by KEDA
+  selector:
+    matchLabels:
+      app: translation-worker
+      tier: standard
+  template:
+    metadata:
+      labels:
+        app: translation-worker
+        tier: standard
+    spec:
+      tolerations:
+      - key: "tier"
+        operator: "Equal"
+        value: "standard"
+        effect: "NoSchedule"
+      nodeSelector:
+        tier: standard
+      containers:
+      - name: worker
+        image: translation-system:latest
+        env:
+        - name: QUEUE_NAME
+          value: "translation_standard"
+        - name: PRIORITY_MODE
+          value: "false"
+        resources:
+          limits:
+            nvidia.com/gpu: 4
+          requests:
+            nvidia.com/gpu: 4

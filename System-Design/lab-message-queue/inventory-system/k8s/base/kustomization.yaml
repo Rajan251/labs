@@ -1,0 +1,13 @@
+# Kustomization for base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: inventory-system
+
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - redis.yaml
+  - inventory-api.yaml
+  - ingress.yaml

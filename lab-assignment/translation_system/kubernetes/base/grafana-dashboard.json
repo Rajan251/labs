@@ -1,0 +1,53 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Translation System Metrics",
+    "panels": [
+      {
+        "title": "Queue Depth (Critical)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rabbitmq_queue_messages{queue='translation_critical'}"
+          }
+        ]
+      },
+      {
+        "title": "Queue Depth (Standard)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rabbitmq_queue_messages{queue='translation_standard'}"
+          }
+        ]
+      },
+      {
+        "title": "Active Workers (Priority)",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "kube_deployment_status_replicas{deployment='translation-worker-priority'}"
+          }
+        ]
+      },
+      {
+        "title": "Active Workers (Standard)",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "kube_deployment_status_replicas{deployment='translation-worker-standard'}"
+          }
+        ]
+      },
+      {
+        "title": "GPU Utilization",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "DCGM_FI_DEV_GPU_UTIL"
+          }
+        ]
+      }
+    ]
+  }
+}

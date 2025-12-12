@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pyroscope-demo
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pyroscope-demo
+  template:
+    metadata:
+      labels:
+        app: pyroscope-demo
+    spec:
+      containers:
+      - name: pyroscope-demo
+        image: python:3.9-slim
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            pip install pyroscope-io
+            cat <<EOF > app.py
+            import pyroscope
+            import time
+            import random
+
+            pyroscope.configure(
+              application_name = "simple.python.app",
+              server_address   = "http://pyroscope.monitoring.svc.cluster.local:4040",
+            )
+
+            def work(n):
+                i = 0
+                while i < n:
+                    i += 1
+
+            def fast_function():
+                work(20000)
+
+            def slow_function():
+                work(80000)
+
+            while True:
+                fast_function()
+                slow_function()
+            EOF
+            python app.py

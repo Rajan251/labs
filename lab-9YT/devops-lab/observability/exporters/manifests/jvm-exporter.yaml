@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jvm-app
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: jvm-app
+  template:
+    metadata:
+      labels:
+        app: jvm-app
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '8080'
+        prometheus.io/path: '/actuator/prometheus'
+    spec:
+      containers:
+      - name: jvm-app
+        # Using a sample Spring Boot app that exposes Micrometer metrics
+        image: danielfm/prometheus-spring-boot-example
+        ports:
+        - containerPort: 8080

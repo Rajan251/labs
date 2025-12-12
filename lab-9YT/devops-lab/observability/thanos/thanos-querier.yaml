@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thanos-querier
+  namespace: monitoring
+  labels:
+    app: thanos-querier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thanos-querier
+  template:
+    metadata:
+      labels:
+        app: thanos-querier
+    spec:
+      containers:
+      - name: thanos-querier
+        image: quay.io/thanos/thanos:v0.32.0
+        args:
+        - "query"
+        - "--http-address=0.0.0.0:9091"
+        - "--store=prometheus.monitoring.svc.cluster.local:10901"
+        - "--store=thanos-store.monitoring.svc.cluster.local:10901"
+        ports:
+        - name: http
+          containerPort: 9091
+        - name: grpc
+          containerPort: 10901
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thanos-querier
+  namespace: monitoring
+spec:
+  selector:
+    app: thanos-querier
+  ports:
+    - port: 9091
+      targetPort: 9091

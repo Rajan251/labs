@@ -1,0 +1,24 @@
+# Development overlay
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+bases:
+  - ../../base
+
+namePrefix: dev-
+
+replicas:
+  - name: catalog-service
+    count: 2
+
+patches:
+  - target:
+      kind: Deployment
+      name: catalog-service
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "128Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"

@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tracegen
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tracegen
+  template:
+    metadata:
+      labels:
+        app: tracegen
+    spec:
+      containers:
+      - name: tracegen
+        image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/tracegen:latest
+        args:
+          - -otlp-endpoint=otel-collector.monitoring.svc.cluster.local:4317
+          - -otlp-insecure
+          - -duration=10s
+          - -workers=1

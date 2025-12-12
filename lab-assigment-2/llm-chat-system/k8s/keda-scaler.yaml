@@ -1,0 +1,18 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: vllm-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: vllm-worker
+  pollingInterval: 5
+  cooldownPeriod: 300
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  triggers:
+  - type: redis
+    metadata:
+      address: redis.default.svc.cluster.local:6379
+      listName: chat_queue
+      listLength: "5" # Scale up if > 5 items in queue

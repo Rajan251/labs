@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.45.0
+        args:
+        - "--config.file=/etc/prometheus/prometheus.yml"
+        - "--storage.tsdb.path=/prometheus/"
+        - "--storage.tsdb.min-block-duration=2h"
+        - "--storage.tsdb.max-block-duration=2h"
+        - "--web.enable-lifecycle"
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: prometheus-config-volume
+          mountPath: /etc/prometheus/
+        - name: prometheus-storage-volume
+          mountPath: /prometheus/
+      - name: thanos-sidecar
+        image: quay.io/thanos/thanos:v0.32.0
+        args:
+        - "sidecar"
+        - "--tsdb.path=/prometheus"
+        - "--prometheus.url=http://127.0.0.1:9090"
+        - "--objstore.config-file=/etc/thanos/thanos.yaml"
+        ports:
+        - name: http-sidecar
+          containerPort: 10902
+        - name: grpc
+          containerPort: 10901
+        env:
+        - name: OBJSTORE_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: thanos-objstore-config
+              key: thanos.yaml
+        volumeMounts:
+        - name: prometheus-storage-volume
+          mountPath: /prometheus
+        - name: thanos-config-volume
+          mountPath: /etc/thanos
+      volumes:
+      - name: prometheus-config-volume
+        configMap:
+          defaultMode: 420
+          name: prometheus-server-conf
+      - name: prometheus-storage-volume
+        emptyDir: {}
+      - name: thanos-config-volume
+        secret:
+          secretName: thanos-objstore-config

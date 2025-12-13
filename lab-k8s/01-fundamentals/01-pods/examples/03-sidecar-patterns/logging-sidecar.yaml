@@ -1,0 +1,226 @@
+# Sidecar Pattern - Logging Sidecar
+# Demonstrates log collection and forwarding using a sidecar container
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-logging-sidecar
+  labels:
+    app: webapp
+    pattern: sidecar-logging
+  annotations:
+    description: "Application with Fluent Bit logging sidecar"
+spec:
+  containers:
+  
+  # Main application container
+  - name: webapp
+    image: nginx:1.25-alpine
+    ports:
+    - containerPort: 80
+      name: http
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+    # Application writes logs to shared volume
+    volumeMounts:
+    - name: app-logs
+      mountPath: /var/log/nginx
+    # Custom nginx configuration to write access logs
+    - name: nginx-config
+      mountPath: /etc/nginx/nginx.conf
+      subPath: nginx.conf
+  
+  # Sidecar container: Fluent Bit log forwarder
+  - name: log-forwarder
+    image: fluent/fluent-bit:2.1
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+    # Mount shared log volume (read-only)
+    volumeMounts:
+    - name: app-logs
+      mountPath: /var/log/nginx
+      readOnly: true
+    # Fluent Bit configuration
+    - name: fluent-bit-config
+      mountPath: /fluent-bit/etc/
+    env:
+    - name: FLUENT_ELASTICSEARCH_HOST
+      value: "elasticsearch-service"
+    - name: FLUENT_ELASTICSEARCH_PORT
+      value: "9200"
+  
+  volumes:
+  # Shared volume for logs
+  - name: app-logs
+    emptyDir: {}
+  
+  # Nginx configuration
+  - name: nginx-config
+    configMap:
+      name: nginx-logging-config
+  
+  # Fluent Bit configuration
+  - name: fluent-bit-config
+    configMap:
+      name: fluent-bit-config
+
+---
+# ConfigMap for nginx with custom logging
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-logging-config
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    events {
+        worker_connections 1024;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        # Custom log format with JSON
+        log_format json_combined escape=json
+        '{'
+          '"time_local":"$time_local",'
+          '"remote_addr":"$remote_addr",'
+          '"remote_user":"$remote_user",'
+          '"request":"$request",'
+          '"status": "$status",'
+          '"body_bytes_sent":"$body_bytes_sent",'
+          '"request_time":"$request_time",'
+          '"http_referrer":"$http_referer",'
+          '"http_user_agent":"$http_user_agent"'
+        '}';
+        
+        access_log /var/log/nginx/access.log json_combined;
+        
+        sendfile on;
+        keepalive_timeout 65;
+        
+        server {
+            listen 80;
+            server_name localhost;
+            
+            location / {
+                root /usr/share/nginx/html;
+                index index.html;
+            }
+        }
+    }
+
+---
+# ConfigMap for Fluent Bit configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         5
+        Daemon        off
+        Log_Level     info
+        Parsers_File  parsers.conf
+    
+    [INPUT]
+        Name              tail
+        Path              /var/log/nginx/access.log
+        Parser            json
+        Tag               nginx.access
+        Refresh_Interval  5
+        Mem_Buf_Limit     5MB
+    
+    [INPUT]
+        Name              tail
+        Path              /var/log/nginx/error.log
+        Tag               nginx.error
+        Refresh_Interval  5
+        Mem_Buf_Limit     5MB
+    
+    [FILTER]
+        Name                kubernetes
+        Match               nginx.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Merge_Log           On
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude On
+    
+    [OUTPUT]
+        Name            es
+        Match           nginx.*
+        Host            ${FLUENT_ELASTICSEARCH_HOST}
+        Port            ${FLUENT_ELASTICSEARCH_PORT}
+        Logstash_Format On
+        Logstash_Prefix nginx
+        Retry_Limit     False
+    
+    [OUTPUT]
+        Name            stdout
+        Match           nginx.*
+        Format          json_lines
+  
+  parsers.conf: |
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    time_local
+        Time_Format %d/%b/%Y:%H:%M:%S %z
+
+---
+# Alternative: Simple log tailing sidecar (for debugging)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-simple-log-sidecar
+  labels:
+    app: webapp
+    pattern: simple-log-sidecar
+spec:
+  containers:
+  - name: webapp
+    image: nginx:1.25-alpine
+    volumeMounts:
+    - name: logs
+      mountPath: /var/log/nginx
+  
+  # Simple sidecar that tails logs to stdout
+  - name: log-tailer
+    image: busybox:1.36
+    command:
+    - 'sh'
+    - '-c'
+    - 'tail -f /var/log/nginx/access.log /var/log/nginx/error.log'
+    volumeMounts:
+    - name: logs
+      mountPath: /var/log/nginx
+      readOnly: true
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+  
+  volumes:
+  - name: logs
+    emptyDir: {}

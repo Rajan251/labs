@@ -1,0 +1,114 @@
+# Job and CronJob Examples
+# Jobs run finite tasks to completion. CronJobs run Jobs on a schedule.
+
+# Example 1: Simple Job (Pi Calculation)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi
+spec:
+  template:
+    spec:
+      containers:
+      - name: pi
+        image: perl:5.34.0
+        command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+      restartPolicy: Never
+  backoffLimit: 4  # Retry up to 4 times
+
+---
+# Example 2: Job with Parallelism (Work Queue)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: parallel-job
+spec:
+  completions: 5    # Total successful pods needed
+  parallelism: 2    # Number of pods running at once
+  template:
+    spec:
+      containers:
+      - name: worker
+        image: busybox
+        command: ["sh", "-c", "echo Processing item... && sleep 5 && echo Done"]
+      restartPolicy: OnFailure
+
+---
+# Example 3: Job with Deadline
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: deadline-job
+spec:
+  activeDeadlineSeconds: 100  # Terminate if not finished in 100s
+  template:
+    spec:
+      containers:
+      - name: worker
+        image: busybox
+        command: ["sh", "-c", "sleep 200"]  # Will fail due to deadline
+      restartPolicy: Never
+
+---
+# Example 4: Basic CronJob (Every Minute)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hello-cron
+spec:
+  schedule: "*/1 * * * *"  # Every minute
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            imagePullPolicy: IfNotPresent
+            command:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+
+---
+# Example 5: CronJob with History Limit and Concurrency Policy
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-cron
+spec:
+  schedule: "0 2 * * *"  # Every day at 2:00 AM
+  concurrencyPolicy: Forbid  # Don't start new job if previous is still running
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: backup-tool:1.0
+            env:
+            - name: DB_HOST
+              value: "mysql"
+          restartPolicy: OnFailure
+
+---
+# Example 6: CronJob with Deadline
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: report-gen
+spec:
+  schedule: "0 8 * * 1"  # Every Monday at 8:00 AM
+  startingDeadlineSeconds: 200  # If missed schedule by 200s, don't start
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800 # Job timeout (30 mins)
+      template:
+        spec:
+          containers:
+          - name: report
+            image: report-generator:1.0
+          restartPolicy: OnFailure

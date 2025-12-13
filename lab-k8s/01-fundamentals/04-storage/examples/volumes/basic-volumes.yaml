@@ -1,0 +1,67 @@
+# Basic Volume Examples
+# Volumes bound to Pod lifecycle
+
+# Example 1: emptyDir
+# Temporary storage, shared between containers, deleted with Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: emptydir-pod
+spec:
+  containers:
+  - name: producer
+    image: busybox
+    command: ["sh", "-c", "echo 'Hello' > /data/hello.txt; sleep 3600"]
+    volumeMounts:
+    - name: temp-vol
+      mountPath: /data
+  - name: consumer
+    image: busybox
+    command: ["sh", "-c", "cat /data/hello.txt; sleep 3600"]
+    volumeMounts:
+    - name: temp-vol
+      mountPath: /data
+  volumes:
+  - name: temp-vol
+    emptyDir: {}
+
+---
+# Example 2: hostPath
+# Mounts file/directory from the Node
+# WARNING: Security risk and couples Pod to Node
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostpath-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - name: host-logs
+      mountPath: /var/log/nginx
+  volumes:
+  - name: host-logs
+    hostPath:
+      path: /var/log/host-nginx
+      type: DirectoryOrCreate
+
+---
+# Example 3: NFS Volume
+# Mounts NFS share
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-pod
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - name: nfs-vol
+      mountPath: /usr/share/nginx/html
+  volumes:
+  - name: nfs-vol
+    nfs:
+      server: nfs-server.default.svc.cluster.local
+      path: "/"

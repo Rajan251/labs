@@ -1,0 +1,17 @@
+# Integration Tests
+# Verify components work together
+
+# Example: Test Frontend -> Backend connection
+apiVersion: v1
+kind: Pod
+metadata:
+  name: integration-test
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+  - name: wget
+    image: busybox
+    command: ['wget']
+    args: ['frontend-service']
+  restartPolicy: Never

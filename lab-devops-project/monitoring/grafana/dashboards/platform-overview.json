@@ -1,0 +1,231 @@
+# Grafana Dashboard: Platform Overview
+# Provides high-level view of platform health and performance
+
+{
+  "dashboard": {
+    "title": "Platform Overview",
+    "tags": ["platform", "overview"],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Cluster Health",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "sum(up{job=\"kubernetes-nodes\"})",
+            "legendFormat": "Healthy Nodes"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 40, "color": "yellow"},
+                {"value": 50, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Pod Status",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "sum by (phase) (kube_pod_status_phase)",
+            "legendFormat": "{{phase}}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "CPU Usage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "min": 0, "max": 100}
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Memory Usage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "min": 0, "max": 100}
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Network I/O",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(node_network_receive_bytes_total[5m])",
+            "legendFormat": "{{instance}} - RX"
+          },
+          {
+            "expr": "rate(node_network_transmit_bytes_total[5m])",
+            "legendFormat": "{{instance}} - TX"
+          }
+        ],
+        "yaxes": [
+          {"format": "Bps"}
+        ]
+      },
+      {
+        "id": 6,
+        "title": "API Server Request Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "sum(rate(apiserver_request_total[5m])) by (verb)",
+            "legendFormat": "{{verb}}"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Persistent Volume Usage",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "(kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {
+                "namespace": "Namespace",
+                "persistentvolumeclaim": "PVC",
+                "Value": "Usage %"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Top Pods by CPU",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "topk(10, sum by (namespace, pod) (rate(container_cpu_usage_seconds_total[5m])))",
+            "format": "table",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Top Pods by Memory",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "topk(10, sum by (namespace, pod) (container_memory_working_set_bytes))",
+            "format": "table",
+            "instant": true
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "DORA Metrics - Deployment Frequency",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "sum(increase(tekton_pipelinerun_succeeded_total[24h]))",
+            "legendFormat": "Deployments/Day"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area"
+        }
+      },
+      {
+        "id": 11,
+        "title": "DORA Metrics - Lead Time",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 32},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(tekton_pipelinerun_duration_seconds_bucket[24h]))",
+            "legendFormat": "p95 Lead Time"
+          }
+        ],
+        "options": {
+          "unit": "s"
+        }
+      },
+      {
+        "id": 12,
+        "title": "DORA Metrics - Change Failure Rate",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 32},
+        "targets": [
+          {
+            "expr": "sum(increase(tekton_pipelinerun_failed_total[24h])) / sum(increase(tekton_pipelinerun_total[24h])) * 100",
+            "legendFormat": "Failure Rate %"
+          }
+        ],
+        "options": {
+          "unit": "percent"
+        }
+      },
+      {
+        "id": 13,
+        "title": "DORA Metrics - MTTR",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 32},
+        "targets": [
+          {
+            "expr": "avg(time() - kube_pod_start_time{phase=\"Running\"}) / 60",
+            "legendFormat": "MTTR (minutes)"
+          }
+        ],
+        "options": {
+          "unit": "m"
+        }
+      }
+    ]
+  }
+}

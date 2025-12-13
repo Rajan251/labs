@@ -1,0 +1,98 @@
+# Event-Driven Architecture Example
+# Using Kafka (simulated) and Consumers
+
+# 1. Kafka Broker (Simplified)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+      - name: kafka
+        image: bitnami/kafka:latest
+        env:
+        - name: KAFKA_CFG_ZOOKEEPER_CONNECT
+          value: "zookeeper:2181"
+        - name: ALLOW_PLAINTEXT_LISTENER
+          value: "yes"
+
+---
+# 2. Producer Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: producer
+  template:
+    metadata:
+      labels:
+        app: producer
+    spec:
+      containers:
+      - name: producer
+        image: my-producer:1.0
+        env:
+        - name: KAFKA_BROKER
+          value: "kafka:9092"
+        - name: TOPIC
+          value: "orders"
+
+---
+# 3. Consumer Worker (Scalable)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-consumer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+    spec:
+      containers:
+      - name: consumer
+        image: my-consumer:1.0
+        env:
+        - name: KAFKA_BROKER
+          value: "kafka:9092"
+        - name: TOPIC
+          value: "orders"
+        - name: GROUP_ID
+          value: "order-processors"
+
+---
+# 4. KEDA ScaledObject (Autoscaling based on Lag)
+# Requires KEDA installed
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: consumer-scaler
+spec:
+  scaleTargetRef:
+    name: event-consumer
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+  - type: kafka
+    metadata:
+      bootstrapServers: kafka:9092
+      topic: orders
+      consumerGroup: order-processors
+      lagThreshold: "50"

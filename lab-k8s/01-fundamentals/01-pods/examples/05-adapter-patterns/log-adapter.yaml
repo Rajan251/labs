@@ -1,0 +1,271 @@
+# Adapter Pattern - Log Format Adapter
+# Adapter container transforms application output to standardized format
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-log-adapter
+  labels:
+    app: legacy-app
+    pattern: adapter
+  annotations:
+    description: "Legacy application with log format adapter"
+spec:
+  containers:
+  
+  # Main application (legacy app with custom log format)
+  - name: legacy-app
+    image: legacy-app:1.0.0
+    ports:
+    - containerPort: 8080
+    # Application writes logs to shared volume in custom format
+    volumeMounts:
+    - name: app-logs
+      mountPath: /var/log/app
+    env:
+    - name: LOG_FILE
+      value: "/var/log/app/application.log"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+  
+  # Adapter: Convert custom log format to JSON
+  - name: log-adapter
+    image: busybox:1.36
+    command:
+    - 'sh'
+    - '-c'
+    - |
+      # Read custom format logs and convert to JSON
+      tail -f /var/log/app/application.log | while read line; do
+        # Parse custom format: "TIMESTAMP|LEVEL|MESSAGE"
+        timestamp=$(echo "$line" | cut -d'|' -f1)
+        level=$(echo "$line" | cut -d'|' -f2)
+        message=$(echo "$line" | cut -d'|' -f3-)
+        
+        # Output as JSON
+        echo "{\"timestamp\":\"$timestamp\",\"level\":\"$level\",\"message\":\"$message\"}"
+      done
+    volumeMounts:
+    - name: app-logs
+      mountPath: /var/log/app
+      readOnly: true
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+  
+  volumes:
+  - name: app-logs
+    emptyDir: {}
+
+---
+# Example: Metrics Format Adapter
+# Converts application-specific metrics to Prometheus format
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-metrics-adapter
+  labels:
+    app: custom-app
+    pattern: metrics-adapter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+spec:
+  containers:
+  
+  # Main application exposing custom metrics format
+  - name: app
+    image: custom-app:1.0.0
+    ports:
+    - containerPort: 8080
+      name: http
+    # App exposes metrics at /metrics in custom format
+    env:
+    - name: METRICS_ENDPOINT
+      value: "/metrics"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+  
+  # Adapter: Convert custom metrics to Prometheus format
+  - name: metrics-adapter
+    image: python:3.11-slim
+    ports:
+    - containerPort: 9090
+      name: prometheus
+    command:
+    - 'python'
+    - '-c'
+    - |
+      from http.server import HTTPServer, BaseHTTPRequestHandler
+      import requests
+      import json
+      
+      class MetricsAdapter(BaseHTTPRequestHandler):
+          def do_GET(self):
+              if self.path == '/metrics':
+                  # Fetch custom metrics from app
+                  response = requests.get('http://localhost:8080/metrics')
+                  custom_metrics = response.json()
+                  
+                  # Convert to Prometheus format
+                  prometheus_metrics = []
+                  for metric_name, metric_value in custom_metrics.items():
+                      prometheus_metrics.append(
+                          f'custom_app_{metric_name} {metric_value}'
+                      )
+                  
+                  # Send Prometheus-formatted response
+                  self.send_response(200)
+                  self.send_header('Content-type', 'text/plain')
+                  self.end_headers()
+                  self.wfile.write('\n'.join(prometheus_metrics).encode())
+              else:
+                  self.send_response(404)
+                  self.end_headers()
+      
+      httpd = HTTPServer(('0.0.0.0', 9090), MetricsAdapter)
+      httpd.serve_forever()
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+
+---
+# Example: Protocol Adapter
+# Converts between different communication protocols
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-protocol-adapter
+  labels:
+    app: grpc-app
+    pattern: protocol-adapter
+spec:
+  containers:
+  
+  # Main application using gRPC
+  - name: grpc-app
+    image: grpc-app:1.0.0
+    ports:
+    - containerPort: 50051
+      name: grpc
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+  
+  # Adapter: gRPC to HTTP/REST adapter
+  - name: grpc-gateway
+    image: grpc-gateway:1.0.0
+    ports:
+    - containerPort: 8080
+      name: http
+    env:
+    - name: GRPC_SERVER_ENDPOINT
+      value: "localhost:50051"
+    command:
+    - "/grpc-gateway"
+    - "--grpc-server-endpoint=localhost:50051"
+    - "--http-server-port=8080"
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 10
+
+---
+# Example: Data Format Adapter
+# Converts data formats (XML to JSON, CSV to JSON, etc.)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-data-adapter
+  labels:
+    app: xml-service
+    pattern: data-adapter
+spec:
+  containers:
+  
+  # Main application producing XML
+  - name: xml-service
+    image: xml-service:1.0.0
+    ports:
+    - containerPort: 8080
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+  
+  # Adapter: XML to JSON converter
+  - name: xml-to-json-adapter
+    image: node:20-alpine
+    ports:
+    - containerPort: 8081
+      name: json-api
+    command:
+    - 'node'
+    - '-e'
+    - |
+      const http = require('http');
+      const https = require('https');
+      const xml2js = require('xml2js');
+      
+      const server = http.createServer((req, res) => {
+        // Fetch XML from main service
+        http.get('http://localhost:8080' + req.url, (xmlRes) => {
+          let xmlData = '';
+          xmlRes.on('data', chunk => xmlData += chunk);
+          xmlRes.on('end', () => {
+            // Convert XML to JSON
+            xml2js.parseString(xmlData, (err, result) => {
+              if (err) {
+                res.writeHead(500);
+                res.end('Error converting XML to JSON');
+              } else {
+                res.writeHead(200, {'Content-Type': 'application/json'});
+                res.end(JSON.stringify(result));
+              }
+            });
+          });
+        });
+      });
+      
+      server.listen(8081);
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"

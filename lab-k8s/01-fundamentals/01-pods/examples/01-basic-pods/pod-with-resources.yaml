@@ -1,0 +1,149 @@
+# Pod with Resource Requests and Limits
+# Demonstrates proper resource management for production workloads
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resource-demo-pod
+  labels:
+    app: resource-demo
+    qos-class: burstable  # Will be Burstable QoS (requests < limits)
+  annotations:
+    description: "Demonstrates resource requests, limits, and QoS classes"
+spec:
+  containers:
+  - name: app
+    image: nginx:1.25-alpine
+    ports:
+    - containerPort: 80
+    
+    # RESOURCE MANAGEMENT
+    # Requests: Guaranteed minimum resources
+    # Limits: Maximum resources allowed
+    resources:
+      requests:
+        # Memory request: 256MB minimum
+        memory: "256Mi"
+        # CPU request: 250 millicores (0.25 CPU cores)
+        cpu: "250m"
+        # Ephemeral storage request (optional)
+        ephemeral-storage: "1Gi"
+      limits:
+        # Memory limit: 512MB maximum (OOMKilled if exceeded)
+        memory: "512Mi"
+        # CPU limit: 500 millicores (throttled if exceeded)
+        cpu: "500m"
+        # Ephemeral storage limit
+        ephemeral-storage: "2Gi"
+    
+    # Environment variables showing resource info
+    env:
+    - name: MEMORY_REQUEST
+      valueFrom:
+        resourceFieldRef:
+          containerName: app
+          resource: requests.memory
+    - name: MEMORY_LIMIT
+      valueFrom:
+        resourceFieldRef:
+          containerName: app
+          resource: limits.memory
+    - name: CPU_REQUEST
+      valueFrom:
+        resourceFieldRef:
+          containerName: app
+          resource: requests.cpu
+    - name: CPU_LIMIT
+      valueFrom:
+        resourceFieldRef:
+          containerName: app
+          resource: limits.cpu
+
+---
+# Example: Guaranteed QoS Class
+# When requests == limits for all containers
+apiVersion: v1
+kind: Pod
+metadata:
+  name: guaranteed-qos-pod
+  labels:
+    qos-class: guaranteed
+spec:
+  containers:
+  - name: app
+    image: nginx:1.25-alpine
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "256Mi"  # Same as request = Guaranteed QoS
+        cpu: "250m"      # Same as request = Guaranteed QoS
+
+---
+# Example: BestEffort QoS Class
+# When no requests or limits are specified
+apiVersion: v1
+kind: Pod
+metadata:
+  name: besteffort-qos-pod
+  labels:
+    qos-class: besteffort
+  annotations:
+    warning: "BestEffort pods are evicted first under resource pressure"
+spec:
+  containers:
+  - name: app
+    image: nginx:1.25-alpine
+    # No resources specified = BestEffort QoS
+    # These pods are evicted first when node runs out of resources
+
+---
+# Example: Huge Pages Resource
+# For applications requiring huge pages (databases, high-performance apps)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hugepages-pod
+spec:
+  containers:
+  - name: app
+    image: nginx:1.25-alpine
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+        hugepages-2Mi: "100Mi"  # Request 100Mi of 2Mi huge pages
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+        hugepages-2Mi: "100Mi"
+    volumeMounts:
+    - name: hugepage
+      mountPath: /hugepages
+  volumes:
+  - name: hugepage
+    emptyDir:
+      medium: HugePages
+
+---
+# Example: Extended Resources (GPUs, FPGAs, etc.)
+# For specialized hardware requirements
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-pod
+spec:
+  containers:
+  - name: cuda-app
+    image: nvidia/cuda:11.8.0-base-ubuntu22.04
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "1000m"
+        nvidia.com/gpu: 1  # Request 1 GPU
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+        nvidia.com/gpu: 1  # Limit to 1 GPU
+    command: ["nvidia-smi"]

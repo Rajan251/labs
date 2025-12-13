@@ -1,0 +1,62 @@
+# Simple Pod Example
+# This demonstrates the most basic pod configuration with a single container
+
+apiVersion: v1
+kind: Pod
+metadata:
+  # Pod name must be unique within a namespace
+  name: nginx-pod
+  # Labels help organize and select pods
+  labels:
+    app: nginx
+    tier: frontend
+    environment: development
+  # Annotations store non-identifying metadata
+  annotations:
+    description: "Simple nginx web server pod"
+    created-by: "k8s-master-lab"
+spec:
+  # Container specifications
+  containers:
+  - name: nginx
+    # Use specific image tags, avoid 'latest' in production
+    image: nginx:1.25-alpine
+    # Container port exposures (documentation only, doesn't actually expose)
+    ports:
+    - containerPort: 80
+      name: http
+      protocol: TCP
+    # Resource requests and limits (ALWAYS specify in production)
+    resources:
+      requests:
+        memory: "64Mi"   # Minimum memory required
+        cpu: "100m"      # Minimum CPU required (100 millicores = 0.1 CPU)
+      limits:
+        memory: "128Mi"  # Maximum memory allowed
+        cpu: "200m"      # Maximum CPU allowed
+    # Environment variables
+    env:
+    - name: NGINX_PORT
+      value: "80"
+    # Liveness probe - restart container if this fails
+    livenessProbe:
+      httpGet:
+        path: /
+        port: 80
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    # Readiness probe - remove from service endpoints if this fails
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 80
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+  # Restart policy: Always, OnFailure, or Never
+  restartPolicy: Always
+  # DNS policy: ClusterFirst, Default, ClusterFirstWithHostNet, or None
+  dnsPolicy: ClusterFirst

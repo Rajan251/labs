@@ -1,0 +1,167 @@
+# Sidecar Pattern - Monitoring/Metrics Sidecar
+# Prometheus exporter sidecar for application metrics
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-metrics-sidecar
+  labels:
+    app: webapp
+    pattern: metrics-sidecar
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9113"
+    prometheus.io/path: "/metrics"
+spec:
+  containers:
+  
+  # Main application container
+  - name: webapp
+    image: nginx:1.25-alpine
+    ports:
+    - containerPort: 80
+      name: http
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+    # Enable nginx stub_status for metrics
+    volumeMounts:
+    - name: nginx-config
+      mountPath: /etc/nginx/conf.d/default.conf
+      subPath: default.conf
+  
+  # Sidecar: Nginx Prometheus Exporter
+  - name: nginx-exporter
+    image: nginx/nginx-prometheus-exporter:0.11
+    args:
+    - '-nginx.scrape-uri=http://localhost:80/stub_status'
+    ports:
+    - containerPort: 9113
+      name: metrics
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+    livenessProbe:
+      httpGet:
+        path: /metrics
+        port: 9113
+      initialDelaySeconds: 10
+      periodSeconds: 10
+  
+  volumes:
+  - name: nginx-config
+    configMap:
+      name: nginx-metrics-config
+
+---
+# ConfigMap with nginx stub_status enabled
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-metrics-config
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+        
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+        
+        # Stub status for metrics (only accessible from localhost)
+        location /stub_status {
+            stub_status on;
+            access_log off;
+            allow 127.0.0.1;
+            deny all;
+        }
+    }
+
+---
+# Example: Application with custom metrics sidecar
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-custom-metrics
+  labels:
+    app: myapp
+    pattern: custom-metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8081"
+spec:
+  containers:
+  
+  # Main application
+  - name: app
+    image: myapp:1.0.0
+    ports:
+    - containerPort: 8080
+      name: http
+    env:
+    - name: METRICS_ENABLED
+      value: "true"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+  
+  # Metrics aggregator sidecar
+  - name: metrics-aggregator
+    image: prom/statsd-exporter:v0.24.0
+    args:
+    - '--statsd.mapping-config=/etc/statsd/statsd-mapping.conf'
+    ports:
+    - containerPort: 9102
+      name: metrics
+      protocol: TCP
+    - containerPort: 9125
+      name: statsd
+      protocol: UDP
+    volumeMounts:
+    - name: statsd-config
+      mountPath: /etc/statsd
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  
+  volumes:
+  - name: statsd-config
+    configMap:
+      name: statsd-mapping-config
+
+---
+# ConfigMap for StatsD mapping
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: statsd-mapping-config
+data:
+  statsd-mapping.conf: |
+    mappings:
+    - match: "myapp.http.requests.*.*"
+      name: "myapp_http_requests_total"
+      labels:
+        method: "$1"
+        status: "$2"
+    - match: "myapp.http.request.duration.*"
+      name: "myapp_http_request_duration_seconds"
+      labels:
+        method: "$1"

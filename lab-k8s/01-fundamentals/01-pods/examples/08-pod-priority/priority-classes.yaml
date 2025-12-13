@@ -1,0 +1,279 @@
+# Pod Priority and Preemption Examples
+# Priority classes allow you to assign importance to pods
+
+# Example 1: Define Priority Classes
+# System-level critical priority (highest)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: system-critical
+value: 1000000000
+globalDefault: false
+description: "Used for system critical pods that must not be preempted"
+
+---
+# High priority for production workloads
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000000
+globalDefault: false
+description: "Used for production critical applications"
+
+---
+# Medium priority (default for most apps)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: medium-priority
+value: 100000
+globalDefault: true  # This will be the default if no priority class is specified
+description: "Default priority for regular applications"
+
+---
+# Low priority for batch jobs
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority
+value: 1000
+globalDefault: false
+description: "Used for batch jobs and non-critical workloads"
+# preemptionPolicy: Never  # Uncomment to prevent this class from preempting others
+
+---
+# Best-effort priority (lowest)
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: best-effort
+value: 0
+globalDefault: false
+description: "Lowest priority, can be preempted by any other pod"
+
+---
+# Example 2: High Priority Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: high-priority-pod
+  labels:
+    app: critical-service
+spec:
+  # Assign high priority to this pod
+  priorityClassName: high-priority
+  containers:
+  - name: app
+    image: critical-app:1.0.0
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+---
+# Example 3: Low Priority Batch Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: batch-processing-job
+spec:
+  template:
+    metadata:
+      labels:
+        app: batch-processor
+    spec:
+      # Low priority - can be preempted if higher priority pods need resources
+      priorityClassName: low-priority
+      containers:
+      - name: processor
+        image: batch-processor:1.0.0
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+      restartPolicy: OnFailure
+
+---
+# Example 4: Production Deployment with High Priority
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: production-api
+  labels:
+    app: production-api
+    tier: backend
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: production-api
+  template:
+    metadata:
+      labels:
+        app: production-api
+        tier: backend
+    spec:
+      # High priority ensures these pods are not preempted
+      priorityClassName: high-priority
+      containers:
+      - name: api
+        image: production-api:1.0.0
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "400m"
+
+---
+# Example 5: Development Deployment with Low Priority
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dev-api
+  labels:
+    app: dev-api
+    environment: development
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dev-api
+  template:
+    metadata:
+      labels:
+        app: dev-api
+        environment: development
+    spec:
+      # Low priority - can be preempted for production workloads
+      priorityClassName: low-priority
+      containers:
+      - name: api
+        image: dev-api:latest
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+---
+# Example 6: System Critical DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-monitoring
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: node-monitoring
+  template:
+    metadata:
+      labels:
+        app: node-monitoring
+    spec:
+      # System critical priority - must run on every node
+      priorityClassName: system-critical
+      containers:
+      - name: monitor
+        image: node-monitor:1.0.0
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+
+---
+# Example 7: Preemption Policy
+# Priority class that doesn't preempt lower priority pods
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority-no-preempt
+value: 900000
+globalDefault: false
+preemptionPolicy: Never  # This pod won't preempt others
+description: "High priority but won't preempt lower priority pods"
+
+---
+# Pod using non-preempting priority class
+apiVersion: v1
+kind: Pod
+metadata:
+  name: important-but-patient-pod
+spec:
+  priorityClassName: high-priority-no-preempt
+  containers:
+  - name: app
+    image: myapp:1.0.0
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+
+---
+# Example 8: Complete Priority Strategy
+# Database StatefulSet with high priority
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgresql
+spec:
+  serviceName: postgresql
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgresql
+  template:
+    metadata:
+      labels:
+        app: postgresql
+        tier: database
+    spec:
+      priorityClassName: high-priority
+      containers:
+      - name: postgresql
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secret
+              key: password
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: twitter-web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: twitter-web
+  template:
+    metadata:
+      labels:
+        app: twitter-web
+    spec:
+      containers:
+      - name: twitter-web
+        image: twitter-app:latest
+        command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: twitter-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: twitter-secrets
+              key: redis-url
+        ports:
+        - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: twitter-web
+spec:
+  selector:
+    app: twitter-web
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP

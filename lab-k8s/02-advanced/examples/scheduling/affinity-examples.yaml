@@ -1,0 +1,98 @@
+# Advanced Scheduling Examples
+# Control where Pods are placed
+
+# Example 1: Node Affinity (Hard & Soft)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: with-node-affinity
+spec:
+  affinity:
+    nodeAffinity:
+      # Hard requirement (Must match)
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: topology.kubernetes.io/zone
+            operator: In
+            values:
+            - us-east-1a
+            - us-east-1b
+      # Soft requirement (Preferred)
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 1
+        preference:
+          matchExpressions:
+          - key: disktype
+            operator: In
+            values:
+            - ssd
+  containers:
+  - name: with-node-affinity
+    image: nginx
+
+---
+# Example 2: Pod Affinity (Co-location)
+# Schedule this pod on the same node as pods with label app=security
+apiVersion: v1
+kind: Pod
+metadata:
+  name: with-pod-affinity
+spec:
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - security
+        topologyKey: kubernetes.io/hostname
+  containers:
+  - name: with-pod-affinity
+    image: nginx
+
+---
+# Example 3: Pod Anti-Affinity (Separation)
+# Do NOT schedule on the same node as pods with label app=web
+apiVersion: v1
+kind: Pod
+metadata:
+  name: with-pod-antiaffinity
+spec:
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app
+              operator: In
+              values:
+              - web
+          topologyKey: kubernetes.io/hostname
+  containers:
+  - name: with-pod-antiaffinity
+    image: nginx
+
+---
+# Example 4: Taints and Tolerations
+# Node Taint (Command to run on node):
+# kubectl taint nodes node1 key=value:NoSchedule
+
+# Pod Toleration
+apiVersion: v1
+kind: Pod
+metadata:
+  name: with-toleration
+spec:
+  tolerations:
+  - key: "key"
+    operator: "Equal"
+    value: "value"
+    effect: "NoSchedule"
+  containers:
+  - name: nginx
+    image: nginx

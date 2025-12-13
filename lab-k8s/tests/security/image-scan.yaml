@@ -1,0 +1,15 @@
+# Security Tests
+# Vulnerability scanning configuration
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: security-scan
+spec:
+  template:
+    spec:
+      containers:
+      - name: trivy
+        image: aquasec/trivy
+        args: ["image", "nginx:latest"]
+      restartPolicy: Never

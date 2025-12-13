@@ -1,0 +1,197 @@
+# Init Containers - Database Migration Example
+# Init containers run before app containers and must complete successfully
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: webapp-with-migration
+  labels:
+    app: webapp
+    pattern: init-container
+  annotations:
+    description: "Web app with database migration init container"
+spec:
+  # Init containers run sequentially before app containers
+  # They run to completion in the order specified
+  initContainers:
+  
+  # Init Container 1: Wait for database to be ready
+  - name: wait-for-db
+    image: busybox:1.36
+    command:
+    - 'sh'
+    - '-c'
+    - |
+      echo "Waiting for database to be ready..."
+      until nc -z postgres-service 5432; do
+        echo "Database not ready, waiting..."
+        sleep 2
+      done
+      echo "Database is ready!"
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+  
+  # Init Container 2: Run database migrations
+  - name: db-migration
+    image: migrate/migrate:v4.16.2
+    command:
+    - 'sh'
+    - '-c'
+    - |
+      echo "Running database migrations..."
+      migrate -path /migrations \
+              -database "postgres://user:password@postgres-service:5432/mydb?sslmode=disable" \
+              up
+      echo "Migrations completed successfully!"
+    volumeMounts:
+    - name: migrations
+      mountPath: /migrations
+      readOnly: true
+    env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: db-credentials
+          key: url
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "100m"
+      limits:
+        memory: "128Mi"
+        cpu: "200m"
+  
+  # Init Container 3: Setup configuration files
+  - name: config-setup
+    image: busybox:1.36
+    command:
+    - 'sh'
+    - '-c'
+    - |
+      echo "Setting up configuration files..."
+      cp /config-source/* /config-dest/
+      echo "Configuration files copied successfully!"
+    volumeMounts:
+    - name: config-source
+      mountPath: /config-source
+      readOnly: true
+    - name: config-dest
+      mountPath: /config-dest
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "50m"
+      limits:
+        memory: "64Mi"
+        cpu: "100m"
+  
+  # Main application container (starts after all init containers succeed)
+  containers:
+  - name: webapp
+    image: myapp:1.0.0
+    ports:
+    - containerPort: 8080
+      name: http
+    env:
+    - name: DATABASE_URL
+      valueFrom:
+        secretKeyRef:
+          name: db-credentials
+          key: url
+    - name: APP_ENV
+      value: "production"
+    volumeMounts:
+    - name: config-dest
+      mountPath: /app/config
+      readOnly: true
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 5
+  
+  # Volumes used by init and app containers
+  volumes:
+  - name: migrations
+    configMap:
+      name: db-migrations
+  - name: config-source
+    configMap:
+      name: app-config
+  - name: config-dest
+    emptyDir: {}
+
+---
+# ConfigMap with database migrations
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-migrations
+data:
+  001_create_users_table.up.sql: |
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username VARCHAR(50) UNIQUE NOT NULL,
+      email VARCHAR(100) UNIQUE NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  
+  002_create_posts_table.up.sql: |
+    CREATE TABLE IF NOT EXISTS posts (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id),
+      title VARCHAR(200) NOT NULL,
+      content TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+---
+# Secret for database credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+stringData:
+  url: "postgres://user:password@postgres-service:5432/mydb?sslmode=disable"
+  username: "user"
+  password: "password"
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  app.conf: |
+    [server]
+    port = 8080
+    host = 0.0.0.0
+    
+    [database]
+    max_connections = 20
+    timeout = 30
+    
+    [logging]
+    level = info
+    format = json

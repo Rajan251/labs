@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: twitter-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: twitter-worker
+  template:
+    metadata:
+      labels:
+        app: twitter-worker
+    spec:
+      containers:
+      - name: twitter-worker
+        image: twitter-app:latest
+        command: ["celery", "-A", "app.workers.fanout.celery_app", "worker", "--loglevel=info"]
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: twitter-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: twitter-secrets
+              key: redis-url
+        - name: RABBITMQ_URL
+          valueFrom:
+            secretKeyRef:
+              name: twitter-secrets
+              key: rabbitmq-url

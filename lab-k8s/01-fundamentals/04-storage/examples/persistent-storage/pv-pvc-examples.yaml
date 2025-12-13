@@ -1,0 +1,79 @@
+# Persistent Storage Examples
+# PV, PVC, and StorageClass
+
+# Example 1: StorageClass
+# Defines dynamic provisioning
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-ssd
+provisioner: kubernetes.io/aws-ebs  # Example for AWS
+parameters:
+  type: gp2
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+
+---
+# Example 2: PersistentVolumeClaim (PVC)
+# Request for storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: fast-ssd  # Matches StorageClass above
+
+---
+# Example 3: Pod using PVC
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-pvc
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - name: data
+      mountPath: /usr/share/nginx/html
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: my-pvc
+
+---
+# Example 4: Manual PersistentVolume (Static Provisioning)
+# For when you have existing storage (e.g., NFS, existing disk)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: manual-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: 192.168.1.10
+    path: "/exports/data"
+
+---
+# Example 5: PVC binding to Manual PV
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: manual-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: ""  # Empty string binds to PV with no class
+  volumeName: manual-pv # Explicit binding (optional but precise)

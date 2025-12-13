@@ -1,0 +1,335 @@
+# Lifecycle Hooks - postStart and preStop
+# Demonstrates container lifecycle management
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lifecycle-hooks-demo
+  labels:
+    app: webapp
+    pattern: lifecycle-hooks
+  annotations:
+    description: "Demonstrates postStart and preStop lifecycle hooks"
+spec:
+  containers:
+  - name: webapp
+    image: nginx:1.25-alpine
+    ports:
+    - containerPort: 80
+      name: http
+    
+    # LIFECYCLE HOOKS
+    lifecycle:
+      # postStart: Executed immediately after container is created
+      # NOTE: No guarantee it runs before ENTRYPOINT
+      # If postStart fails, container is killed
+      postStart:
+        exec:
+          command:
+          - 'sh'
+          - '-c'
+          - |
+            echo "Container started at $(date)" >> /var/log/lifecycle.log
+            echo "Initializing application..."
+            # Create initial configuration
+            mkdir -p /app/config
+            echo "initialized=true" > /app/config/status
+            # Register with service discovery (example)
+            # curl -X POST http://service-registry/register \
+            #   -d '{"service":"webapp","host":"'$HOSTNAME'"}'
+      
+      # preStop: Executed before container is terminated
+      # Container will not be terminated until preStop completes
+      # Grace period: terminationGracePeriodSeconds (default 30s)
+      preStop:
+        exec:
+          command:
+          - 'sh'
+          - '-c'
+          - |
+            echo "Container stopping at $(date)" >> /var/log/lifecycle.log
+            echo "Performing graceful shutdown..."
+            # Deregister from service discovery
+            # curl -X DELETE http://service-registry/deregister/$HOSTNAME
+            # Drain connections
+            sleep 5
+            # Final cleanup
+            echo "Cleanup completed"
+    
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+    
+    volumeMounts:
+    - name: logs
+      mountPath: /var/log
+  
+  # Termination grace period (time allowed for preStop to complete)
+  terminationGracePeriodSeconds: 30
+  
+  volumes:
+  - name: logs
+    emptyDir: {}
+
+---
+# Example: postStart with HTTP call
+apiVersion: v1
+kind: Pod
+metadata:
+  name: poststart-http-hook
+  labels:
+    pattern: poststart-http
+spec:
+  containers:
+  - name: app
+    image: nginx:1.25-alpine
+    ports:
+    - containerPort: 80
+    
+    lifecycle:
+      postStart:
+        httpGet:
+          path: /initialize
+          port: 80
+          scheme: HTTP
+        # Alternative: HTTP POST with specific headers
+        # httpGet:
+        #   path: /api/initialize
+        #   port: 8080
+        #   httpHeaders:
+        #   - name: X-Custom-Header
+        #     value: "initialization"
+    
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+
+---
+# Example: preStop with graceful shutdown
+apiVersion: v1
+kind: Pod
+metadata:
+  name: graceful-shutdown-demo
+  labels:
+    app: api
+    pattern: graceful-shutdown
+spec:
+  containers:
+  - name: api
+    image: myapi:1.0.0
+    ports:
+    - containerPort: 8080
+    
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - 'sh'
+          - '-c'
+          - |
+            # Send SIGTERM to application for graceful shutdown
+            kill -TERM 1
+            # Wait for application to finish processing requests
+            # Application should handle SIGTERM and stop accepting new requests
+            sleep 15
+    
+    # Important: terminationGracePeriodSeconds should be longer than
+    # the sleep time in preStop hook
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+  
+  terminationGracePeriodSeconds: 60
+
+---
+# Example: Database connection draining
+apiVersion: v1
+kind: Pod
+metadata:
+  name: db-connection-drain
+  labels:
+    app: db-app
+    pattern: connection-drain
+spec:
+  containers:
+  - name: app
+    image: db-app:1.0.0
+    ports:
+    - containerPort: 8080
+    
+    env:
+    - name: DB_POOL_SIZE
+      value: "20"
+    - name: GRACEFUL_SHUTDOWN_TIMEOUT
+      value: "30"
+    
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - '/bin/sh'
+          - '-c'
+          - |
+            # Signal application to stop accepting new connections
+            curl -X POST http://localhost:8080/admin/shutdown
+            
+            # Wait for existing connections to drain
+            # Application should close DB connections gracefully
+            timeout=30
+            while [ $timeout -gt 0 ]; do
+              active_connections=$(curl -s http://localhost:8080/admin/connections)
+              if [ "$active_connections" = "0" ]; then
+                echo "All connections drained"
+                break
+              fi
+              echo "Waiting for $active_connections connections to drain..."
+              sleep 1
+              timeout=$((timeout - 1))
+            done
+            
+            echo "Shutdown complete"
+    
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  
+  terminationGracePeriodSeconds: 45
+
+---
+# Example: Cache warming with postStart
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cache-warming-demo
+  labels:
+    app: cached-app
+    pattern: cache-warming
+spec:
+  containers:
+  - name: app
+    image: cached-app:1.0.0
+    ports:
+    - containerPort: 8080
+    
+    lifecycle:
+      postStart:
+        exec:
+          command:
+          - '/bin/sh'
+          - '-c'
+          - |
+            # Wait for application to be ready
+            sleep 5
+            
+            # Warm up cache with frequently accessed data
+            curl -X POST http://localhost:8080/admin/cache/warm \
+              -H "Content-Type: application/json" \
+              -d '{"keys": ["popular_items", "user_preferences", "config"]}'
+            
+            echo "Cache warming completed"
+      
+      preStop:
+        exec:
+          command:
+          - '/bin/sh'
+          - '-c'
+          - |
+            # Persist cache to disk before shutdown
+            curl -X POST http://localhost:8080/admin/cache/persist
+            sleep 2
+    
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  
+  terminationGracePeriodSeconds: 30
+
+---
+# Example: Service mesh sidecar coordination
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sidecar-coordination
+  labels:
+    app: webapp
+    pattern: sidecar-coordination
+spec:
+  containers:
+  
+  # Main application
+  - name: app
+    image: myapp:1.0.0
+    ports:
+    - containerPort: 8080
+    
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - '/bin/sh'
+          - '-c'
+          - |
+            # Notify sidecar to stop accepting traffic
+            curl -X POST http://localhost:15000/drain_listeners
+            # Wait for sidecar to drain connections
+            sleep 10
+            # Now safe to shutdown app
+    
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "200m"
+      limits:
+        memory: "512Mi"
+        cpu: "400m"
+  
+  # Envoy sidecar
+  - name: envoy
+    image: envoyproxy/envoy:v1.27-latest
+    ports:
+    - containerPort: 15000
+      name: admin
+    - containerPort: 15001
+      name: outbound
+    
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - '/bin/sh'
+          - '-c'
+          - |
+            # Drain Envoy listeners
+            curl -X POST http://localhost:15000/drain_listeners
+            # Wait for connections to drain
+            sleep 15
+    
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+  
+  terminationGracePeriodSeconds: 60

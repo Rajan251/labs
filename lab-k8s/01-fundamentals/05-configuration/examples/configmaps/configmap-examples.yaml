@@ -1,0 +1,84 @@
+# ConfigMap Examples
+# Decouple configuration from container image
+
+# Example 1: Basic ConfigMap (Env Vars)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-settings
+data:
+  APP_COLOR: "blue"
+  APP_MODE: "production"
+  MAX_RETRIES: "3"
+
+---
+# Example 2: ConfigMap with File Content
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  nginx.conf: |
+    server {
+      listen 80;
+      server_name localhost;
+      location / {
+        root /usr/share/nginx/html;
+      }
+    }
+  extra.conf: "some-extra-config"
+
+---
+# Example 3: Immutable ConfigMap (K8s 1.19+)
+# Prevents accidental updates
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: immutable-config
+immutable: true
+data:
+  database-host: "db.prod.local"
+
+---
+# Example 4: Pod using ConfigMap as Env Vars
+apiVersion: v1
+kind: Pod
+metadata:
+  name: env-pod
+spec:
+  containers:
+  - name: app
+    image: busybox
+    command: ["sh", "-c", "env"]
+    env:
+    # Single variable
+    - name: COLOR
+      valueFrom:
+        configMapKeyRef:
+          name: app-settings
+          key: APP_COLOR
+    # All variables from ConfigMap
+    envFrom:
+    - configMapRef:
+        name: app-settings
+
+---
+# Example 5: Pod mounting ConfigMap as Volume
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vol-pod
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    volumeMounts:
+    - name: config-vol
+      mountPath: /etc/nginx/conf.d
+  volumes:
+  - name: config-vol
+    configMap:
+      name: nginx-config
+      items:
+      - key: nginx.conf
+        path: default.conf  # Rename file in volume

@@ -1,0 +1,249 @@
+# Pod Disruption Budget (PDB) Examples
+# PDBs limit the number of pods that can be down simultaneously during voluntary disruptions
+
+# Example 1: Minimum Available Pods
+# Ensures at least 2 pods are always available
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webapp-pdb-minavailable
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: webapp
+      tier: frontend
+
+---
+# Example 2: Maximum Unavailable Pods
+# Allows at most 1 pod to be unavailable at a time
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webapp-pdb-maxunavailable
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: webapp
+      tier: backend
+
+---
+# Example 3: Percentage-based PDB
+# Ensures at least 75% of pods are available
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webapp-pdb-percentage
+spec:
+  minAvailable: 75%
+  selector:
+    matchLabels:
+      app: webapp
+
+---
+# Example 4: PDB with Deployment
+# Complete example with Deployment and PDB
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: critical-webapp
+  labels:
+    app: critical-webapp
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: critical-webapp
+  template:
+    metadata:
+      labels:
+        app: critical-webapp
+        tier: frontend
+    spec:
+      containers:
+      - name: webapp
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+
+---
+# PDB for the critical webapp
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: critical-webapp-pdb
+spec:
+  # Ensure at least 3 out of 5 pods are always available
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: critical-webapp
+
+---
+# Example 5: PDB for StatefulSet
+# Ensures database replicas maintain quorum
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+spec:
+  serviceName: mongodb
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:7.0
+        ports:
+        - containerPort: 27017
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+
+---
+# PDB for MongoDB - maintain quorum (2 out of 3)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mongodb-pdb
+spec:
+  # For a 3-node MongoDB replica set, we need at least 2 nodes
+  # to maintain quorum
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: mongodb
+
+---
+# Example 6: PDB with unhealthyPodEvictionPolicy
+# Kubernetes 1.26+ feature
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webapp-pdb-with-eviction-policy
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: webapp
+  # unhealthyPodEvictionPolicy determines how unhealthy pods are considered for eviction
+  # Options: IfHealthyBudget (default), AlwaysAllow
+  unhealthyPodEvictionPolicy: IfHealthyBudget
+
+---
+# Example 7: Multiple PDBs for different tiers
+# Frontend PDB - can tolerate more disruption
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+spec:
+  maxUnavailable: 2
+  selector:
+    matchLabels:
+      tier: frontend
+
+---
+# Backend PDB - more conservative
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+spec:
+  minAvailable: 80%
+  selector:
+    matchLabels:
+      tier: backend
+
+---
+# Database PDB - very conservative
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: database-pdb
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      tier: database
+
+---
+# Example 8: PDB Best Practices
+# Deployment with proper labels and PDB
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: production-api
+  labels:
+    app: production-api
+    environment: production
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: production-api
+      environment: production
+  template:
+    metadata:
+      labels:
+        app: production-api
+        environment: production
+        tier: backend
+    spec:
+      containers:
+      - name: api
+        image: myapi:1.0.0
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "400m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+---
+# PDB for production API
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: production-api-pdb
+spec:
+  # With 10 replicas, allow at most 2 to be unavailable
+  # This ensures 80% availability during voluntary disruptions
+  maxUnavailable: 2
+  selector:
+    matchLabels:
+      app: production-api
+      environment: production

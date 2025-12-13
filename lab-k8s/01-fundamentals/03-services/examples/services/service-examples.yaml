@@ -1,0 +1,112 @@
+# Service Examples
+# Services provide stable network endpoints for Pods
+
+# Example 1: ClusterIP (Default)
+# Internal access only
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  labels:
+    app: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+  - port: 80        # Port exposed by Service
+    targetPort: 8080 # Port on the Container
+    protocol: TCP
+    name: http
+
+---
+# Example 2: NodePort
+# Access via NodeIP:NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080  # Optional: Static port (30000-32767)
+    name: http
+
+---
+# Example 3: LoadBalancer
+# Provisions Cloud Load Balancer (AWS ELB, GCP LB, etc.)
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: public-app
+  ports:
+  - port: 80
+    targetPort: 8080
+  # loadBalancerIP: 1.2.3.4  # Optional: Request specific IP (if supported)
+
+---
+# Example 4: ExternalName
+# DNS CNAME alias for external service
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-db
+spec:
+  type: ExternalName
+  externalName: my-rds-instance.us-west-2.rds.amazonaws.com
+  ports:
+  - port: 5432
+
+---
+# Example 5: Headless Service
+# No ClusterIP, returns Pod IPs directly via DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: headless-svc
+spec:
+  clusterIP: None
+  selector:
+    app: stateful-app
+  ports:
+  - port: 80
+    targetPort: 80
+
+---
+# Example 6: Service with Named Target Port
+# Decouples Service port definition from Pod port numbers
+apiVersion: v1
+kind: Service
+metadata:
+  name: named-port-svc
+spec:
+  selector:
+    app: webapp
+  ports:
+  - port: 80
+    targetPort: http-web  # Matches 'name: http-web' in Pod spec
+
+---
+# Example 7: Multi-Port Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: multi-port-svc
+spec:
+  selector:
+    app: webapp
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  - port: 443
+    targetPort: 8443
+    name: https

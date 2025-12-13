@@ -140,8 +140,8 @@ k8s-master-lab/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/k8s-master-lab.git
-cd k8s-master-lab
+git clone https://github.com/Rajan251/labs
+cd lab-k8s
 ```
 
 ### 2. Set Up Your Environment
@@ -274,9 +274,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 - How to submit pull requests
 - Coding standards
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -286,8 +283,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/k8s-master-lab/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/k8s-master-lab/discussions)
+- **Issues**: [GitHub Issues](https://github.com/Rajan251/labs/tree/Dev/lab-k8s)
+- **Discussions**: [GitHub Discussions](https://github.com/Rajan251/labs/tree/Dev/lab-k8s/discussions)
 - **Documentation**: [Full Documentation](documentation/)
 
 ## 🗺️ Roadmap

@@ -1,0 +1,12 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: trivy-scan
+spec:
+  workspaces:
+    - name: source
+  steps:
+    - name: scan
+      image: aquasec/trivy:latest
+      script: |
+        trivy fs --exit-code 1 --severity HIGH,CRITICAL $(workspaces.source.path)

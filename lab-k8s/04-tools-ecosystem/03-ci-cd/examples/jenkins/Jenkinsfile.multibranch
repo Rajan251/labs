@@ -1,0 +1,126 @@
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    some-label: some-label-value
+spec:
+  containers:
+  - name: jnlp
+    image: jenkins/inbound-agent:latest
+    args: ['\$(JENKINS_SECRET)', '\$(JENKINS_NAME)']
+  - name: docker
+    image: docker:dind
+    securityContext:
+      privileged: true
+  - name: trivy
+    image: aquasec/trivy:latest
+    command: ['cat']
+    tty: true
+  - name: helm
+    image: alpine/helm:latest
+    command: ['cat']
+    tty: true
+"""
+        }
+    }
+
+    environment {
+        DOCKER_REGISTRY = "my-registry.example.com"
+        IMAGE_NAME = "my-app"
+        KUBE_NAMESPACE = "default"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh './mvnw test' // Example for Java app
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                container('trivy') {
+                    sh "trivy fs --exit-code 1 --severity HIGH,CRITICAL ."
+                }
+            }
+        }
+
+        stage('Build & Push') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                container('docker') {
+                    script {
+                        def imageTag = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}"
+                        sh "docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag} ."
+                        sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Dev') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                container('helm') {
+                    script {
+                        def imageTag = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}"
+                        sh """
+                            helm upgrade --install my-app ./helm/my-app \
+                                --namespace dev \
+                                --set image.tag=${imageTag}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            when {
+                branch 'main'
+            }
+            steps {
+                container('helm') {
+                    script {
+                        def imageTag = "${env.BRANCH_NAME}-${env.BUILD_NUMBER}"
+                        sh """
+                            helm upgrade --install my-app ./helm/my-app \
+                                --namespace staging \
+                                --set image.tag=${imageTag}
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finished'
+        }
+        success {
+            echo 'Pipeline succeeded'
+            // slackSend channel: '#ci-cd', color: 'good', message: "Build Succeeded: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+        }
+        failure {
+            echo 'Pipeline failed'
+            // slackSend channel: '#ci-cd', color: 'danger', message: "Build Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
+        }
+    }
+}

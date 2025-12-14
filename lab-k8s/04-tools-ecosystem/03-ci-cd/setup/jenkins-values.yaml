@@ -1,0 +1,22 @@
+controller:
+  installPlugins:
+    - kubernetes:3937.v706d96d186b_8
+    - workflow-aggregator:590.v6a_d052e5a_a_b_5
+    - git:5.2.0
+    - configuration-as-code:1670.v564dc8b_982d0
+
+  JCasC:
+    defaultConfig: true
+    configScripts:
+      welcome-message: |
+        jenkins:
+          systemMessage: "Welcome to our CI/CD Jenkins Server."
+
+persistence:
+  enabled: true
+  size: "8Gi"
+  storageClass: "standard"
+
+serviceAccount:
+  create: true
+  name: jenkins

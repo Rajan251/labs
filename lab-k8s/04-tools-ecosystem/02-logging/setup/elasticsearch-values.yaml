@@ -1,0 +1,17 @@
+replicas: 3
+minimumMasterNodes: 2
+
+volumeClaimTemplate:
+  accessModes: [ "ReadWriteOnce" ]
+  storageClassName: "standard"
+  resources:
+    requests:
+      storage: 10Gi
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "2Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"

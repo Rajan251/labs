@@ -1,0 +1,10 @@
+apiVersion: v2
+name: stateful-app
+description: A Helm chart for stateful applications (databases, queues)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: common
+    version: 0.1.0
+    repository: file://../../common

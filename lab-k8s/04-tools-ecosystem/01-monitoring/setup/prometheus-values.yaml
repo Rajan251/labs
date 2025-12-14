@@ -1,0 +1,23 @@
+server:
+  global:
+    scrape_interval: 15s
+    evaluation_interval: 15s
+
+  retention: 15d
+
+  persistentVolume:
+    enabled: true
+    size: 10Gi
+    storageClass: standard
+
+alertmanager:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 2Gi
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true

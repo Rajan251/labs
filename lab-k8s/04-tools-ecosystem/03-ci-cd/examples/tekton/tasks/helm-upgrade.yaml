@@ -1,0 +1,23 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: helm-upgrade
+spec:
+  workspaces:
+    - name: source
+  params:
+    - name: release-name
+      type: string
+    - name: chart-path
+      type: string
+    - name: namespace
+      type: string
+    - name: image-tag
+      type: string
+  steps:
+    - name: upgrade
+      image: alpine/helm:latest
+      script: |
+        helm upgrade --install $(params.release-name) $(workspaces.source.path)/$(params.chart-path) \
+          --namespace $(params.namespace) \
+          --set image.tag=$(params.image-tag)

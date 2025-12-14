@@ -1,0 +1,91 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: multibranch-pipeline
+spec:
+  params:
+    - name: git-url
+      type: string
+    - name: git-revision
+      type: string
+    - name: image-registry
+      type: string
+  workspaces:
+    - name: shared-data
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-data
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+
+    - name: security-scan
+      runAfter: ["fetch-source"]
+      taskRef:
+        name: trivy-scan
+      workspaces:
+        - name: source
+          workspace: shared-data
+
+    - name: build-image
+      runAfter: ["security-scan"]
+      taskRef:
+        name: kaniko-build
+      workspaces:
+        - name: source
+          workspace: shared-data
+      params:
+        - name: IMAGE
+          value: "$(params.image-registry):$(params.git-revision)"
+      when:
+        - input: "$(params.git-revision)"
+          operator: in
+          values: ["main", "develop"]
+
+    - name: deploy-dev
+      runAfter: ["build-image"]
+      taskRef:
+        name: helm-upgrade
+      workspaces:
+        - name: source
+          workspace: shared-data
+      params:
+        - name: release-name
+          value: "my-app-dev"
+        - name: chart-path
+          value: "helm/my-app"
+        - name: namespace
+          value: "dev"
+        - name: image-tag
+          value: "$(params.git-revision)"
+      when:
+        - input: "$(params.git-revision)"
+          operator: in
+          values: ["develop"]
+
+    - name: deploy-prod
+      runAfter: ["build-image"]
+      taskRef:
+        name: helm-upgrade
+      workspaces:
+        - name: source
+          workspace: shared-data
+      params:
+        - name: release-name
+          value: "my-app-prod"
+        - name: chart-path
+          value: "helm/my-app"
+        - name: namespace
+          value: "prod"
+        - name: image-tag
+          value: "$(params.git-revision)"
+      when:
+        - input: "$(params.git-revision)"
+          operator: in
+          values: ["main"]

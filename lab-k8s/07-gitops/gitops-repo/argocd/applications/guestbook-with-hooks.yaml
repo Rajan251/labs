@@ -1,0 +1,67 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook-with-hooks
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/gitops-lab-config.git
+    targetRevision: main
+    path: apps/guestbook/overlays/dev
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    
+    # Sync hooks - run jobs at specific phases
+    hooks:
+      # Pre-sync hook - run database migration before deployment
+      - name: db-migration
+        type: PreSync
+        manifest: |
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: db-migration
+            namespace: dev
+          spec:
+            template:
+              spec:
+                containers:
+                - name: migrate
+                  image: migrate/migrate:v4
+                  command: ["migrate", "-database", "redis://redis-master:6379", "up"]
+                restartPolicy: Never
+            backoffLimit: 3
+      
+      # Post-sync hook - send notification after successful deployment  
+      - name: send-notification
+        type: PostSync
+        manifest: |
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: notify-deployment
+            namespace: dev
+          spec:
+            template:
+              spec:
+                containers:
+                - name: notify
+                  image: curlimages/curl:latest
+                  command: 
+                    - sh
+                    - -c
+                    - |
+                      echo "Deployment completed successfully!"
+                      # curl -X POST webhook-url
+                restartPolicy: Never
+            backoffLimit: 1

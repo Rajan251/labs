@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: guestbook-config
+  labels:
+    app: guestbook
+data:
+  # Application configuration
+  APP_NAME: "Guestbook"
+  APP_VERSION: "v4"
+  LOG_LEVEL: "info"
+  
+  # Redis configuration
+  REDIS_MASTER_SERVICE: "redis-master"
+  REDIS_REPLICA_SERVICE: "redis-replica"
+  REDIS_PORT: "6379"
+  
+  # Feature flags
+  ENABLE_ANALYTICS: "false"
+  ENABLE_CACHE: "true"

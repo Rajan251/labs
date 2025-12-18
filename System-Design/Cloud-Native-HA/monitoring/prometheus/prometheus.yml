@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'fastapi-ha'
+    static_configs:
+      - targets: ['fastapi-service:8000']
+    metrics_path: '/metrics'
+
+  - job_name: 'django-ha'
+    static_configs:
+      - targets: ['django-service:8000']
+    # Django Prometheus export usually at /metrics if django-prometheus installed
+
+  - job_name: 'go-ha'
+    static_configs:
+      - targets: ['go-service:8080']
+
+rule_files:
+  - 'alert.rules'

@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: production
+
+bases:
+  - ../../base
+
+# Production-specific labels
+commonLabels:
+  environment: production
+
+# Higher replicas for production
+replicas:
+  - name: guestbook-frontend
+    count: 3
+  - name: redis-master
+    count: 1
+  - name: redis-replica
+    count: 3
+
+# Use stable production tag
+images:
+  - name: gcr.io/google-samples/gb-frontend
+    newTag: v4.0.0
+
+# Production gets higher resources
+patches:
+  - target:
+      kind: Deployment
+      name: guestbook-frontend
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "512Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "500m"
+
+# ConfigMap patches for production
+configMapGenerator:
+  - name: guestbook-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=warning
+      - ENABLE_ANALYTICS=true
+      - ENABLE_CACHE=true
+
+# Add HPA for production
+resources:
+  - hpa.yaml

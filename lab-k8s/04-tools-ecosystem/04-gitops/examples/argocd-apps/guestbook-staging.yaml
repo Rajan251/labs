@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/Rajan251/labs.git
+    targetRevision: main
+    path: lab-k8s/04-tools-ecosystem/04-gitops/examples/guestbook/overlays/staging
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guestbook-staging
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false  # Manual review for staging
+      allowEmpty: false
+    
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  revisionHistoryLimit: 10

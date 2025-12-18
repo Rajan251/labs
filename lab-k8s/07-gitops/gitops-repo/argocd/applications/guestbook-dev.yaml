@@ -1,0 +1,46 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook-dev
+  namespace: argocd
+  # Finalizer to ensure proper cleanup
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Project name
+  project: default
+  
+  # Source repository
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/gitops-lab-config.git
+    targetRevision: main
+    path: apps/guestbook/overlays/dev
+  
+  # Destination cluster and namespace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  
+  # Sync policy - auto-sync for dev environment
+  syncPolicy:
+    automated:
+      prune: true        # Delete resources that are no longer in Git
+      selfHeal: true     # Revert manual changes
+      allowEmpty: false  # Don't sync if source is empty
+    syncOptions:
+      - CreateNamespace=true  # Auto-create namespace if it doesn't exist
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true   # Prune resources last
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Ignore differences in these fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Ignore if HPA is managing replicas

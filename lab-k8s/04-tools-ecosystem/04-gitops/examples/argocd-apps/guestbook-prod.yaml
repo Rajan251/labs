@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: gitops-alerts
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: gitops-critical
+spec:
+  project: production
+  
+  source:
+    repoURL: https://github.com/Rajan251/labs.git
+    targetRevision: v1.0.0  # Use specific tag for production
+    path: lab-k8s/04-tools-ecosystem/04-gitops/examples/guestbook/overlays/prod
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guestbook-prod
+  
+  syncPolicy:
+    # Manual sync for production
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+  
+  # Sync windows for production (only during maintenance windows)
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    
+    # Example: only allow sync during maintenance window
+    # syncWindows:
+    #   - kind: allow
+    #     schedule: '0 2 * * *'  # 2 AM daily
+    #     duration: 2h
+    #     applications:
+    #       - '*-prod'
+  
+  revisionHistoryLimit: 20
+  
+  # Ignore differences for certain fields
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Ignore replica count changes (managed by HPA)

@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/Rajan251/labs.git
+    targetRevision: main
+    path: lab-k8s/04-tools-ecosystem/04-gitops/examples/guestbook/overlays/dev
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guestbook-dev
+  
+  syncPolicy:
+    automated:
+      prune: true        # Auto-delete resources not in Git
+      selfHeal: true     # Auto-sync when drift detected
+      allowEmpty: false  # Don't sync if manifests are empty
+    
+    syncOptions:
+      - CreateNamespace=true  # Auto-create namespace
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  revisionHistoryLimit: 10

@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guestbook-frontend
+  labels:
+    app: guestbook
+    component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guestbook
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: guestbook
+        component: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: gcr.io/google-samples/gb-frontend:v5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        ports:
+        - containerPort: 80
+          name: http
+        env:
+        - name: GET_HOSTS_FROM
+          value: "dns"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guestbook-redis-master
+  labels:
+    app: guestbook
+    component: redis
+    role: master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guestbook
+      component: redis
+      role: master
+  template:
+    metadata:
+      labels:
+        app: guestbook
+        component: redis
+        role: master
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.0-alpine
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        ports:
+        - containerPort: 6379
+          name: redis
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guestbook-redis-replica
+  labels:
+    app: guestbook
+    component: redis
+    role: replica
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: guestbook
+      component: redis
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: guestbook
+        component: redis
+        role: replica
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.0-alpine
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - --replicaof
+        - guestbook-redis-master
+        - "6379"
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5

@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  # This application manages all other applications
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/gitops-lab-config.git
+    targetRevision: main
+    path: argocd/applications
+    directory:
+      recurse: false
+      include: '*.yaml'
+      exclude: 'app-of-apps.yaml'  # Don't include self
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

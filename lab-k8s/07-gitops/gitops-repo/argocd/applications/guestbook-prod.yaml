@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Notifications for production deployments
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: gitops-notifications
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: gitops-alerts
+spec:
+  project: default
+  
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/gitops-lab-config.git
+    targetRevision: main
+    path: apps/guestbook/overlays/prod
+  
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  
+  # Manual sync for production - requires explicit approval
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Ignore differences
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # HPA manages this

@@ -1,0 +1,46 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staging
+
+bases:
+  - ../../base
+
+# Staging-specific labels
+commonLabels:
+  environment: staging
+
+# Moderate replicas for staging
+replicas:
+  - name: guestbook-frontend
+    count: 2
+  - name: redis-master
+    count: 1
+  - name: redis-replica
+    count: 2
+
+# Use staging image tag
+images:
+  - name: gcr.io/google-samples/gb-frontend
+    newTag: v4-staging
+
+# Staging-specific resource Configuration
+patches:
+  - target:
+      kind: Deployment
+      name: guestbook-frontend
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "128Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+
+# ConfigMap patches for staging
+configMapGenerator:
+  - name: guestbook-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=info
+      - ENABLE_ANALYTICS=true

@@ -1,0 +1,29 @@
+groups:
+- name: ha-alerts
+  rules:
+  # 1. High Failure Rate (SLA Violation)
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{status=~"5.."}[5m]) > 1
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High HTTP 5xx error rate on {{ $labels.job }}"
+
+  # 2. Latency > 200ms (P99)
+  - alert: HighLatency
+    expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 0.2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High P99 Latency (>200ms) on {{ $labels.job }}"
+
+  # 3. Pod Crash Looping
+  - alert: KubernetesPodCrashLooping
+    expr: rate(kube_pod_container_status_restarts_total[15m]) > 5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Pod {{ $labels.pod }} is crash looping"

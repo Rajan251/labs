@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: guestbook-all-envs
+  namespace: argocd
+spec:
+  # Git generator - create Applications for each overlay directory
+  generators:
+    - git:
+        repoURL: https://github.com/YOUR_USERNAME/gitops-lab-config.git
+        revision: main
+        directories:
+          - path: apps/guestbook/overlays/*
+  
+  template:
+    metadata:
+      # Extract environment name from path
+      name: 'guestbook-{{path.basename}}'
+      namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      
+      source:
+        repoURL: https://github.com/YOUR_USERNAME/gitops-lab-config.git
+        targetRevision: main
+        path: '{{path}}'
+      
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{path.basename}}'
+      
+      # Different sync policies based on environment
+      syncPolicy:
+        automated:
+          prune: true
+          # Only auto-heal for dev
+          selfHeal: '{{path.basename | eq "dev"}}'
+        syncOptions:
+          - CreateNamespace=true

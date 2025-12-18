@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  labels:
+    app: enterprise-app
+    service: order
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: enterprise-app
+      service: order
+  template:
+    metadata:
+      labels:
+        app: enterprise-app
+        service: order
+        version: v1
+    spec:
+      containers:
+      - name: api
+        image: enterprise/order-service:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: db_url
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  selector:
+    app: enterprise-app
+    service: order
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP

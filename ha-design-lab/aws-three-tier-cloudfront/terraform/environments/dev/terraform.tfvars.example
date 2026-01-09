@@ -1,0 +1,47 @@
+# Project Configuration
+project_name = "three-tier-app"
+environment  = "dev"
+region       = "us-east-1"
+
+# Network Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
+enable_nat_gateway = true
+enable_flow_logs   = true
+
+# Security Configuration
+vpn_allowed_ips = ["YOUR_IP_ADDRESS/32"] # Replace with your IP
+app_port        = 8080
+db_port         = 27017
+
+# Compute Configuration
+key_name = "YOUR_KEY_PAIR_NAME" # Replace with your key pair name
+
+vpn_instance_type = "t3.small"
+app_instance_type = "t3.medium"
+db_instance_type  = "t3.large"
+
+app_volume_size = 20
+db_volume_size  = 50
+
+# Auto Scaling Configuration
+app_min_size         = 2
+app_max_size         = 6
+app_desired_capacity = 2
+
+db_min_size         = 2
+db_max_size         = 4
+db_desired_capacity = 2
+
+# Load Balancer Configuration
+health_check_path         = "/health"
+enable_deletion_protection = false
+ssl_certificate_arn       = "" # Optional: ARN of ACM certificate
+
+# CloudFront Configuration
+cloudfront_price_class         = "PriceClass_100"
+domain_aliases                 = [] # Optional: ["www.example.com"]
+cloudfront_ssl_certificate_arn = "" # Optional: ARN of ACM certificate in us-east-1
+
+# Monitoring Configuration
+alert_email = "your-email@example.com" # Replace with your email

@@ -1,0 +1,30 @@
+# Example terraform.tfvars file
+# Copy this to terraform.tfvars and customize
+
+aws_region  = "us-east-1"
+environment = "dev"
+
+# Network Configuration
+vpc_cidr             = "10.0.0.0/16"
+availability_zones   = ["us-east-1a", "us-east-1b"]
+public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs = ["10.0.11.0/24", "10.0.12.0/24"]
+
+# Security
+your_ip = "YOUR_IP_HERE/32" # Get from: curl ifconfig.me
+
+# EC2 Key Pair
+key_name = "two-tier-key" # Create this key pair first
+
+# Database Configuration
+db_instance_type = "t3.large"
+# Set passwords via environment variables:
+# export TF_VAR_mongodb_admin_password="YourSecurePassword123!"
+# export TF_VAR_mongodb_app_password="AppPassword123!"
+
+# Web/App Configuration
+webapp_instance_type = "t3.medium"
+asg_min_size         = 2
+asg_max_size         = 10
+asg_desired_capacity = 2
+cpu_target_value     = 70

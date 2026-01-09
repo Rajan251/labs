@@ -1,0 +1,17 @@
+# Development Environment Variables
+# Copy this file to terraform.tfvars and customize
+
+aws_region = "us-east-1"
+vpc_cidr   = "10.0.0.0/16"
+
+# Restrict SSH access to your IP for security
+# Get your IP: curl ifconfig.me
+allowed_ssh_cidr_blocks = ["0.0.0.0/0"]
+
+common_tags = {
+  Project     = "PayFlow"
+  Environment = "Development"
+  ManagedBy   = "Terraform"
+  CostCenter  = "Engineering"
+  Owner       = "DevOps Team"
+}

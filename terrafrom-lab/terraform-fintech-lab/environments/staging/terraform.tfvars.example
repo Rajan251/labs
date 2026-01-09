@@ -1,0 +1,16 @@
+# Staging Environment Variables
+# Copy this file to terraform.tfvars and customize
+
+aws_region = "us-east-1"
+vpc_cidr   = "10.1.0.0/16"
+
+# Restrict SSH access as needed
+allowed_ssh_cidr_blocks = ["0.0.0.0/0"]
+
+common_tags = {
+  Project     = "PayFlow"
+  Environment = "Staging"
+  ManagedBy   = "Terraform"
+  CostCenter  = "Engineering"
+  Owner       = "DevOps Team"
+}
